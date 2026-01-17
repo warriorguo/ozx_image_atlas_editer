@@ -1,0 +1,29 @@
+# Dependencies
+frontend/node_modules
+backend/__pycache__
+backend/*.pyc
+
+# Build outputs (will be rebuilt in Docker)
+frontend/build
+
+# Development files
+.git
+.gitignore
+*.md
+LICENSE
+
+# IDE
+.idea
+.vscode
+*.swp
+
+# Tests
+tests/
+backend/tests/
+frontend/src/__tests__/
+backend/test_requirements.txt
+
+# Misc
+*.log
+.DS_Store
+start.sh
