@@ -113,12 +113,16 @@ class Renderer:
             elif op['type'] == 'rotate':
                 degree = op['degree']
                 cell_image = cell_image.rotate(-degree, expand=False, fillcolor=(0, 0, 0, 0))
-        
+            elif op['type'] == 'opacity':
+                r, g, b, a = cell_image.split()
+                a = a.point(lambda x: int(x * op['value']))
+                cell_image = Image.merge('RGBA', (r, g, b, a))
+
         # Convert to bytes
         buffer = io.BytesIO()
         cell_image.save(buffer, format='PNG')
         return buffer.getvalue()
-    
+
     @staticmethod
     def render_atlas(image_id: str) -> Optional[bytes]:
         image = store.get_image(image_id)
@@ -152,7 +156,11 @@ class Renderer:
                     elif op['type'] == 'rotate':
                         degree = op['degree']
                         cell_image = cell_image.rotate(-degree, expand=False, fillcolor=(0, 0, 0, 0))
-                
+                    elif op['type'] == 'opacity':
+                        r, g, b, a = cell_image.split()
+                        a = a.point(lambda x: int(x * op['value']))
+                        cell_image = Image.merge('RGBA', (r, g, b, a))
+
                 # Paste into output
                 output_image.paste(cell_image, (x, y))
         
@@ -267,6 +275,11 @@ def apply_cell_operation(image_id, cell_id):
         if degree not in [90, 180, 270]:
             return jsonify({'error': 'Invalid rotation degree'}), 400
         op = {'type': 'rotate', 'degree': degree}
+    elif op_type == 'opacity':
+        value = data.get('value')
+        if not isinstance(value, (int, float)) or value < 0.0 or value > 1.0:
+            return jsonify({'error': 'Opacity value must be a number between 0.0 and 1.0'}), 400
+        op = {'type': 'opacity', 'value': float(value)}
     else:
         return jsonify({'error': 'Invalid operation type'}), 400
     

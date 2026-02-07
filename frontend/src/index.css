@@ -134,6 +134,43 @@ body {
   object-fit: contain;
 }
 
+.opacity-control {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.opacity-control label {
+  font-size: 12px;
+  font-weight: 500;
+  min-width: 80px;
+}
+
+.opacity-control input[type="range"] {
+  flex: 1;
+  cursor: pointer;
+}
+
+.opacity-control .opacity-apply-btn {
+  padding: 6px 9px;
+  border: 1px solid #17a2b8;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  background: #17a2b8;
+  color: white;
+  transition: all 0.2s ease;
+  min-width: 72px;
+}
+
+.opacity-control .opacity-apply-btn:hover {
+  background: #138496;
+  border-color: #117a8b;
+  transform: translateY(-2px);
+}
+
 .edit-controls {
   margin-top: 12px;
   display: flex;

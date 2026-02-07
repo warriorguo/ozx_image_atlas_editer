@@ -12,6 +12,7 @@ function App() {
   const [loading, setLoading] = useState(false);
   const [dragOver, setDragOver] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
+  const [opacity, setOpacity] = useState(100);
   const fileInputRef = useRef();
 
   // Prevent default drag and drop behavior globally
@@ -267,6 +268,26 @@ function App() {
             src={`/api/image/${imageData.imageId}/cell/${selectedCell}/preview?t=${refreshKey}`}
             alt={`Cell ${selectedCell}`}
           />
+        </div>
+        <div className="opacity-control">
+          <label>Opacity: {opacity}%</label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={opacity}
+            onChange={(e) => setOpacity(parseInt(e.target.value))}
+          />
+          <button
+            className="opacity-apply-btn"
+            onClick={() => {
+              handleCellOperation({ type: 'opacity', value: opacity / 100 });
+              setOpacity(100);
+            }}
+          >
+            Apply Opacity
+          </button>
         </div>
         <div className="edit-controls">
           <button
