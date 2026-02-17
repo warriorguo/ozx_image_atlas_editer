@@ -201,6 +201,53 @@ body {
   transform: translateY(-2px);
 }
 
+.color-remove-control {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.color-remove-control label {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.color-remove-control input[type="color"] {
+  width: 32px;
+  height: 28px;
+  padding: 1px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+}
+
+.color-remove-control input[type="range"] {
+  flex: 1;
+  cursor: pointer;
+}
+
+.color-remove-control .color-remove-btn {
+  padding: 6px 9px;
+  border: 1px solid #e83e8c;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  background: #e83e8c;
+  color: white;
+  transition: all 0.2s ease;
+  min-width: 72px;
+  white-space: nowrap;
+}
+
+.color-remove-control .color-remove-btn:hover {
+  background: #d63384;
+  border-color: #c82d78;
+  transform: translateY(-2px);
+}
+
 .edit-controls {
   margin-top: 12px;
   display: flex;

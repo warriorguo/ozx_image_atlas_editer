@@ -9,6 +9,7 @@ import tempfile
 import atexit
 import shutil
 from typing import Dict, List, Optional, Tuple
+import numpy as np
 
 app = Flask(__name__)
 CORS(app)
@@ -117,6 +118,15 @@ class Renderer:
                 r, g, b, a = cell_image.split()
                 a = a.point(lambda x: int(x * op['value']))
                 cell_image = Image.merge('RGBA', (r, g, b, a))
+            elif op['type'] == 'remove_color':
+                target = tuple(int(op['color'][i:i+2], 16) for i in (1, 3, 5))
+                tolerance = op['tolerance']
+                arr = np.array(cell_image, dtype=np.float64)
+                diff = arr[:, :, :3] - np.array(target, dtype=np.float64)
+                dist = np.sqrt(np.sum(diff ** 2, axis=2))
+                mask = dist <= tolerance
+                arr[mask, 3] = 0
+                cell_image = Image.fromarray(arr.astype(np.uint8), 'RGBA')
 
         # Convert to bytes
         buffer = io.BytesIO()
@@ -160,6 +170,15 @@ class Renderer:
                         r, g, b, a = cell_image.split()
                         a = a.point(lambda x: int(x * op['value']))
                         cell_image = Image.merge('RGBA', (r, g, b, a))
+                    elif op['type'] == 'remove_color':
+                        target = tuple(int(op['color'][i:i+2], 16) for i in (1, 3, 5))
+                        tolerance = op['tolerance']
+                        arr = np.array(cell_image, dtype=np.float64)
+                        diff = arr[:, :, :3] - np.array(target, dtype=np.float64)
+                        dist = np.sqrt(np.sum(diff ** 2, axis=2))
+                        mask = dist <= tolerance
+                        arr[mask, 3] = 0
+                        cell_image = Image.fromarray(arr.astype(np.uint8), 'RGBA')
 
                 # Paste into output
                 output_image.paste(cell_image, (x, y))
@@ -280,6 +299,14 @@ def apply_cell_operation(image_id, cell_id):
         if not isinstance(value, (int, float)) or value < 0.0 or value > 1.0:
             return jsonify({'error': 'Opacity value must be a number between 0.0 and 1.0'}), 400
         op = {'type': 'opacity', 'value': float(value)}
+    elif op_type == 'remove_color':
+        color = data.get('color')
+        tolerance = data.get('tolerance')
+        if not isinstance(color, str) or len(color) != 7 or color[0] != '#':
+            return jsonify({'error': 'Color must be a hex string like #rrggbb'}), 400
+        if not isinstance(tolerance, (int, float)) or tolerance < 0 or tolerance > 255:
+            return jsonify({'error': 'Tolerance must be a number between 0 and 255'}), 400
+        op = {'type': 'remove_color', 'color': color, 'tolerance': int(tolerance)}
     else:
         return jsonify({'error': 'Invalid operation type'}), 400
     

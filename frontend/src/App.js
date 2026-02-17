@@ -13,6 +13,8 @@ function App() {
   const [dragOver, setDragOver] = useState(false);
   const [refreshKey, setRefreshKey] = useState(0);
   const [opacity, setOpacity] = useState(100);
+  const [removeColor, setRemoveColor] = useState('#ffffff');
+  const [colorTolerance, setColorTolerance] = useState(30);
   const fileInputRef = useRef();
 
   // Prevent default drag and drop behavior globally
@@ -287,6 +289,29 @@ function App() {
             }}
           >
             Apply Opacity
+          </button>
+        </div>
+        <div className="color-remove-control">
+          <label>Remove Color:</label>
+          <input
+            type="color"
+            value={removeColor}
+            onChange={(e) => setRemoveColor(e.target.value)}
+          />
+          <label>Tolerance: {colorTolerance}</label>
+          <input
+            type="range"
+            min="0"
+            max="255"
+            step="1"
+            value={colorTolerance}
+            onChange={(e) => setColorTolerance(parseInt(e.target.value))}
+          />
+          <button
+            className="color-remove-btn"
+            onClick={() => handleCellOperation({ type: 'remove_color', color: removeColor, tolerance: colorTolerance })}
+          >
+            Remove Color
           </button>
         </div>
         <div className="edit-controls">
