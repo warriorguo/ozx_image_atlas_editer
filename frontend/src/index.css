@@ -106,6 +106,7 @@ body {
 }
 
 .cell-thumbnail {
+  position: relative;
   border: 2px solid transparent;
   cursor: pointer;
   border-radius: 4px;
@@ -132,6 +133,120 @@ body {
   width: 100%;
   height: auto;
   display: block;
+}
+
+.center-cross {
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  pointer-events: none;
+}
+
+.center-cross::before,
+.center-cross::after {
+  content: '';
+  position: absolute;
+  background: rgba(255, 0, 0, 0.6);
+}
+
+.center-cross::before {
+  left: 25%;
+  right: 25%;
+  top: 50%;
+  height: 1px;
+  transform: translateY(-0.5px);
+}
+
+.center-cross::after {
+  top: 25%;
+  bottom: 25%;
+  left: 50%;
+  width: 1px;
+  transform: translateX(-0.5px);
+}
+
+.batch-badge {
+  font-size: 12px;
+  font-weight: normal;
+  background: #007bff;
+  color: white;
+  padding: 2px 8px;
+  border-radius: 10px;
+  margin-left: 8px;
+}
+
+.batch-btn {
+  padding: 4px 10px;
+  border: 1px solid #6c757d;
+  border-radius: 4px;
+  background: #6c757d;
+  color: white;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: all 0.2s ease;
+}
+
+.batch-btn:hover {
+  background: #5a6268;
+  border-color: #545b62;
+}
+
+.toggle-label {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  font-weight: 500;
+  cursor: pointer;
+  white-space: nowrap;
+}
+
+.toggle-label input[type="checkbox"] {
+  cursor: pointer;
+}
+
+.move-control {
+  margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.move-control label {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.move-control input[type="number"] {
+  width: 60px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.move-control .move-apply-btn {
+  padding: 6px 9px;
+  border: 1px solid #fd7e14;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  background: #fd7e14;
+  color: white;
+  transition: all 0.2s ease;
+  min-width: 72px;
+  white-space: nowrap;
+}
+
+.move-control .move-apply-btn:hover {
+  background: #e8590c;
+  border-color: #dc560b;
+  transform: translateY(-2px);
 }
 
 .cell-editor {

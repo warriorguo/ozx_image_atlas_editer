@@ -127,6 +127,11 @@ class Renderer:
                 mask = dist <= tolerance
                 arr[mask, 3] = 0
                 cell_image = Image.fromarray(arr.astype(np.uint8), 'RGBA')
+            elif op['type'] == 'move':
+                dx, dy = op['dx'], op['dy']
+                new_img = Image.new('RGBA', cell_image.size, (0, 0, 0, 0))
+                new_img.paste(cell_image, (dx, dy))
+                cell_image = new_img
 
         # Convert to bytes
         buffer = io.BytesIO()
@@ -179,6 +184,11 @@ class Renderer:
                         mask = dist <= tolerance
                         arr[mask, 3] = 0
                         cell_image = Image.fromarray(arr.astype(np.uint8), 'RGBA')
+                    elif op['type'] == 'move':
+                        dx, dy = op['dx'], op['dy']
+                        new_img = Image.new('RGBA', cell_image.size, (0, 0, 0, 0))
+                        new_img.paste(cell_image, (dx, dy))
+                        cell_image = new_img
 
                 # Paste into output
                 output_image.paste(cell_image, (x, y))
@@ -187,6 +197,39 @@ class Renderer:
         buffer = io.BytesIO()
         output_image.save(buffer, format='PNG')
         return buffer.getvalue()
+
+def _validate_operation(data):
+    """Validate operation data and return (op_dict, None) or (None, error_string)."""
+    op_type = data.get('type')
+    if op_type == 'erase':
+        return {'type': 'erase'}, None
+    elif op_type == 'rotate':
+        degree = data.get('degree')
+        if degree not in [90, 180, 270]:
+            return None, 'Invalid rotation degree'
+        return {'type': 'rotate', 'degree': degree}, None
+    elif op_type == 'opacity':
+        value = data.get('value')
+        if not isinstance(value, (int, float)) or value < 0.0 or value > 1.0:
+            return None, 'Opacity value must be a number between 0.0 and 1.0'
+        return {'type': 'opacity', 'value': float(value)}, None
+    elif op_type == 'remove_color':
+        color = data.get('color')
+        tolerance = data.get('tolerance')
+        if not isinstance(color, str) or len(color) != 7 or color[0] != '#':
+            return None, 'Color must be a hex string like #rrggbb'
+        if not isinstance(tolerance, (int, float)) or tolerance < 0 or tolerance > 255:
+            return None, 'Tolerance must be a number between 0 and 255'
+        return {'type': 'remove_color', 'color': color, 'tolerance': int(tolerance)}, None
+    elif op_type == 'move':
+        dx = data.get('dx')
+        dy = data.get('dy')
+        if not isinstance(dx, int) or not isinstance(dy, int):
+            return None, 'dx and dy must be integers'
+        return {'type': 'move', 'dx': dx, 'dy': dy}, None
+    else:
+        return None, 'Invalid operation type'
+
 
 @app.route('/api/image/upload', methods=['POST'])
 def upload_image():
@@ -284,32 +327,9 @@ def get_cell_preview(image_id, cell_id):
 
 @app.route('/api/image/<image_id>/cell/<int:cell_id>/op', methods=['POST'])
 def apply_cell_operation(image_id, cell_id):
-    data = request.json
-    op_type = data.get('type')
-    
-    if op_type == 'erase':
-        op = {'type': 'erase'}
-    elif op_type == 'rotate':
-        degree = data.get('degree')
-        if degree not in [90, 180, 270]:
-            return jsonify({'error': 'Invalid rotation degree'}), 400
-        op = {'type': 'rotate', 'degree': degree}
-    elif op_type == 'opacity':
-        value = data.get('value')
-        if not isinstance(value, (int, float)) or value < 0.0 or value > 1.0:
-            return jsonify({'error': 'Opacity value must be a number between 0.0 and 1.0'}), 400
-        op = {'type': 'opacity', 'value': float(value)}
-    elif op_type == 'remove_color':
-        color = data.get('color')
-        tolerance = data.get('tolerance')
-        if not isinstance(color, str) or len(color) != 7 or color[0] != '#':
-            return jsonify({'error': 'Color must be a hex string like #rrggbb'}), 400
-        if not isinstance(tolerance, (int, float)) or tolerance < 0 or tolerance > 255:
-            return jsonify({'error': 'Tolerance must be a number between 0 and 255'}), 400
-        op = {'type': 'remove_color', 'color': color, 'tolerance': int(tolerance)}
-    else:
-        return jsonify({'error': 'Invalid operation type'}), 400
-    
+    op, error = _validate_operation(request.json)
+    if error:
+        return jsonify({'error': error}), 400
     store.add_cell_op(image_id, cell_id, op)
     return jsonify({'ok': True})
 
@@ -317,6 +337,26 @@ def apply_cell_operation(image_id, cell_id):
 def undo_cell_operation(image_id, cell_id):
     success = store.undo_cell_op(image_id, cell_id)
     return jsonify({'ok': success})
+
+@app.route('/api/image/<image_id>/batch/op', methods=['POST'])
+def batch_cell_operation(image_id):
+    data = request.json
+    cell_ids = data.get('cellIds', [])
+    operation = data.get('operation', {})
+    op, error = _validate_operation(operation)
+    if error:
+        return jsonify({'error': error}), 400
+    for cell_id in cell_ids:
+        store.add_cell_op(image_id, cell_id, op)
+    return jsonify({'ok': True})
+
+@app.route('/api/image/<image_id>/batch/undo', methods=['POST'])
+def batch_undo_operation(image_id):
+    data = request.json
+    cell_ids = data.get('cellIds', [])
+    for cell_id in cell_ids:
+        store.undo_cell_op(image_id, cell_id)
+    return jsonify({'ok': True})
 
 @app.route('/api/image/<image_id>/delete', methods=['DELETE'])
 def delete_image(image_id):

@@ -6,7 +6,11 @@ function App() {
   const [imageData, setImageData] = useState(null);
   const [gridParams, setGridParams] = useState(null);
   const [cells, setCells] = useState([]);
-  const [selectedCell, setSelectedCell] = useState(null);
+  const [selectedCells, setSelectedCells] = useState(new Set());
+  const [activeCell, setActiveCell] = useState(null);
+  const [showCenterCross, setShowCenterCross] = useState(false);
+  const [moveX, setMoveX] = useState(0);
+  const [moveY, setMoveY] = useState(0);
   const [rows, setRows] = useState(8);
   const [cols, setCols] = useState(8);
   const [loading, setLoading] = useState(false);
@@ -64,7 +68,8 @@ function App() {
       setImageData(response.data);
       setGridParams(null);
       setCells([]);
-      setSelectedCell(null);
+      setSelectedCells(new Set());
+      setActiveCell(null);
     } catch (error) {
       console.error('Upload failed:', error);
       alert('Failed to upload image');
@@ -112,7 +117,8 @@ function App() {
       
       setGridParams(response.data);
       setCells(response.data.cells);
-      setSelectedCell(0);
+      setSelectedCells(new Set([0]));
+      setActiveCell(0);
     } catch (error) {
       console.error('Slice failed:', error);
       alert('Failed to slice image');
@@ -121,11 +127,13 @@ function App() {
   };
 
   const handleCellOperation = async (operation) => {
-    if (!imageData || selectedCell === null) return;
-    
+    if (!imageData || selectedCells.size === 0) return;
+
     try {
-      await axios.post(`/api/image/${imageData.imageId}/cell/${selectedCell}/op`, operation);
-      // Force refresh of cell preview by incrementing refresh key
+      await axios.post(`/api/image/${imageData.imageId}/batch/op`, {
+        cellIds: [...selectedCells],
+        operation
+      });
       setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Operation failed:', error);
@@ -134,11 +142,12 @@ function App() {
   };
 
   const handleUndo = async () => {
-    if (!imageData || selectedCell === null) return;
-    
+    if (!imageData || selectedCells.size === 0) return;
+
     try {
-      await axios.post(`/api/image/${imageData.imageId}/cell/${selectedCell}/undo`);
-      // Force refresh of cell preview by incrementing refresh key
+      await axios.post(`/api/image/${imageData.imageId}/batch/undo`, {
+        cellIds: [...selectedCells]
+      });
       setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Undo failed:', error);
@@ -166,6 +175,34 @@ function App() {
       console.error('Export failed:', error);
       alert('Failed to export atlas');
     }
+  };
+
+  const handleCellClick = (cellId, e) => {
+    if (e.ctrlKey || e.metaKey) {
+      setSelectedCells(prev => {
+        const next = new Set(prev);
+        if (next.has(cellId)) {
+          next.delete(cellId);
+        } else {
+          next.add(cellId);
+        }
+        return next;
+      });
+      setActiveCell(cellId);
+    } else {
+      setSelectedCells(new Set([cellId]));
+      setActiveCell(cellId);
+    }
+  };
+
+  const handleSelectAll = () => {
+    setSelectedCells(new Set(cells.map(c => c.cellId)));
+    if (activeCell === null && cells.length > 0) setActiveCell(cells[0].cellId);
+  };
+
+  const handleDeselectAll = () => {
+    setSelectedCells(new Set());
+    setActiveCell(null);
   };
 
   const renderGridOverlay = () => {
@@ -208,23 +245,27 @@ function App() {
       );
     }
     
-    // Selected cell highlight
-    if (selectedCell !== null && cells.length > 0) {
-      const cell = cells[selectedCell];
-      lines.push(
-        <div
-          key="selected"
-          style={{
-            position: 'absolute',
-            left: `${(cell.x / imageData.width) * 100}%`,
-            top: `${(cell.y / imageData.height) * 100}%`,
-            width: `${(cell.w / imageData.width) * 100}%`,
-            height: `${(cell.h / imageData.height) * 100}%`,
-            border: '2px solid #007bff',
-            boxSizing: 'border-box'
-          }}
-        />
-      );
+    // Selected cells highlight
+    if (selectedCells.size > 0 && cells.length > 0) {
+      selectedCells.forEach(cellId => {
+        const cell = cells[cellId];
+        if (cell) {
+          lines.push(
+            <div
+              key={`selected-${cellId}`}
+              style={{
+                position: 'absolute',
+                left: `${(cell.x / imageData.width) * 100}%`,
+                top: `${(cell.y / imageData.height) * 100}%`,
+                width: `${(cell.w / imageData.width) * 100}%`,
+                height: `${(cell.h / imageData.height) * 100}%`,
+                border: '2px solid #007bff',
+                boxSizing: 'border-box'
+              }}
+            />
+          );
+        }
+      });
     }
     
     return lines;
@@ -246,13 +287,14 @@ function App() {
         {cells.map((cell, index) => (
           <div
             key={cell.cellId}
-            className={`cell-thumbnail ${selectedCell === cell.cellId ? 'selected' : ''}`}
-            onClick={() => setSelectedCell(cell.cellId)}
+            className={`cell-thumbnail ${selectedCells.has(cell.cellId) ? 'selected' : ''}`}
+            onClick={(e) => handleCellClick(cell.cellId, e)}
           >
             <img
               src={`/api/image/${imageData.imageId}/cell/${cell.cellId}/preview?t=${refreshKey}`}
               alt={`Cell ${cell.cellId}`}
             />
+            {showCenterCross && <div className="center-cross" />}
           </div>
         ))}
       </div>
@@ -260,15 +302,18 @@ function App() {
   };
 
   const renderCellEditor = () => {
-    if (!imageData || selectedCell === null) return null;
-    
+    if (!imageData || activeCell === null) return null;
+
     return (
       <div className="cell-editor">
-        <div className="section-title">Cell Editor</div>
+        <div className="section-title">
+          Cell Editor
+          {selectedCells.size > 1 && <span className="batch-badge">{selectedCells.size} cells selected</span>}
+        </div>
         <div className="cell-preview">
           <img
-            src={`/api/image/${imageData.imageId}/cell/${selectedCell}/preview?t=${refreshKey}`}
-            alt={`Cell ${selectedCell}`}
+            src={`/api/image/${imageData.imageId}/cell/${activeCell}/preview?t=${refreshKey}`}
+            alt={`Cell ${activeCell}`}
           />
         </div>
         <div className="opacity-control">
@@ -312,6 +357,30 @@ function App() {
             onClick={() => handleCellOperation({ type: 'remove_color', color: removeColor, tolerance: colorTolerance })}
           >
             Remove Color
+          </button>
+        </div>
+        <div className="move-control">
+          <label>X:</label>
+          <input
+            type="number"
+            value={moveX}
+            onChange={(e) => setMoveX(parseInt(e.target.value) || 0)}
+          />
+          <label>Y:</label>
+          <input
+            type="number"
+            value={moveY}
+            onChange={(e) => setMoveY(parseInt(e.target.value) || 0)}
+          />
+          <button
+            className="move-apply-btn"
+            onClick={() => {
+              handleCellOperation({ type: 'move', dx: moveX, dy: moveY });
+              setMoveX(0);
+              setMoveY(0);
+            }}
+          >
+            Apply Move
           </button>
         </div>
         <div className="edit-controls">
@@ -448,8 +517,18 @@ function App() {
           
           {gridParams && (
             <div>
-              <div className="section-title">
-                Cells ({gridParams.rows}×{gridParams.cols})
+              <div className="section-title" style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                <span>Cells ({gridParams.rows}×{gridParams.cols})</span>
+                <button className="batch-btn" onClick={handleSelectAll}>Select All</button>
+                <button className="batch-btn" onClick={handleDeselectAll}>Deselect All</button>
+                <label className="toggle-label">
+                  <input
+                    type="checkbox"
+                    checked={showCenterCross}
+                    onChange={(e) => setShowCenterCross(e.target.checked)}
+                  />
+                  Show Center Cross
+                </label>
               </div>
               {renderCellGrid()}
             </div>
