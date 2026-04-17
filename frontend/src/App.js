@@ -23,6 +23,7 @@ function App() {
   const [playerLoop, setPlayerLoop] = useState(true);
   const [playerPlaying, setPlayerPlaying] = useState(false);
   const [playerFrameIndex, setPlayerFrameIndex] = useState(0);
+  const [playerRotation, setPlayerRotation] = useState(0);
   const fileInputRef = useRef();
 
   // Prevent default drag and drop behavior globally
@@ -458,10 +459,13 @@ function App() {
       <div className="sprite-player">
         <div className="section-title">Sprite Player</div>
         <div className="player-display">
-          <img
-            src={`/api/image/${imageData.imageId}/cell/${currentFrame}/preview?t=${refreshKey}`}
-            alt={`Frame ${safeIndex + 1}`}
-          />
+          <div style={{ position: 'relative', display: 'inline-block', transform: `rotate(${playerRotation}deg)`, transition: 'transform 0.1s ease' }}>
+            <img
+              src={`/api/image/${imageData.imageId}/cell/${currentFrame}/preview?t=${refreshKey}`}
+              alt={`Frame ${safeIndex + 1}`}
+            />
+            {showCenterCross && <div className="center-cross" />}
+          </div>
         </div>
         <div className="player-info">
           Frame {safeIndex + 1} / {frames.length}
@@ -492,6 +496,17 @@ function App() {
             />
             Loop
           </label>
+        </div>
+        <div className="player-rotation">
+          <label>Rotation: {playerRotation}°</label>
+          <input
+            type="range"
+            min="0"
+            max="360"
+            step="1"
+            value={playerRotation}
+            onChange={(e) => setPlayerRotation(parseInt(e.target.value))}
+          />
         </div>
       </div>
     );
