@@ -19,6 +19,10 @@ function App() {
   const [opacity, setOpacity] = useState(100);
   const [removeColor, setRemoveColor] = useState('#ffffff');
   const [colorTolerance, setColorTolerance] = useState(30);
+  const [playerFps, setPlayerFps] = useState(12);
+  const [playerLoop, setPlayerLoop] = useState(true);
+  const [playerPlaying, setPlayerPlaying] = useState(false);
+  const [playerFrameIndex, setPlayerFrameIndex] = useState(0);
   const fileInputRef = useRef();
 
   // Prevent default drag and drop behavior globally
@@ -46,6 +50,30 @@ function App() {
       document.removeEventListener('drop', handleGlobalDrop, false);
     };
   }, []);
+
+  // Sprite player animation loop
+  useEffect(() => {
+    if (!playerPlaying) return;
+    const frames = [...selectedCells].sort((a, b) => a - b);
+    if (frames.length === 0) {
+      setPlayerPlaying(false);
+      return;
+    }
+
+    const interval = setInterval(() => {
+      setPlayerFrameIndex(prev => {
+        const next = prev + 1;
+        if (next >= frames.length) {
+          if (playerLoop) return 0;
+          setPlayerPlaying(false);
+          return frames.length - 1;
+        }
+        return next;
+      });
+    }, 1000 / playerFps);
+
+    return () => clearInterval(interval);
+  }, [playerPlaying, playerFps, playerLoop, selectedCells]);
 
   const handleFileUpload = async (file) => {
     if (!file) return;
@@ -419,6 +447,56 @@ function App() {
     );
   };
 
+  const renderSpritePlayer = () => {
+    if (!imageData || selectedCells.size === 0) return null;
+
+    const frames = [...selectedCells].sort((a, b) => a - b);
+    const safeIndex = Math.min(playerFrameIndex, frames.length - 1);
+    const currentFrame = frames[safeIndex >= 0 ? safeIndex : 0];
+
+    return (
+      <div className="sprite-player">
+        <div className="section-title">Sprite Player</div>
+        <div className="player-display">
+          <img
+            src={`/api/image/${imageData.imageId}/cell/${currentFrame}/preview?t=${refreshKey}`}
+            alt={`Frame ${safeIndex + 1}`}
+          />
+        </div>
+        <div className="player-info">
+          Frame {safeIndex + 1} / {frames.length}
+        </div>
+        <div className="player-controls">
+          <button
+            className={`player-btn ${playerPlaying ? 'stop' : 'play'}`}
+            onClick={() => {
+              if (!playerPlaying) setPlayerFrameIndex(0);
+              setPlayerPlaying(!playerPlaying);
+            }}
+          >
+            {playerPlaying ? 'Stop' : 'Play'}
+          </button>
+          <label>FPS:</label>
+          <input
+            type="number"
+            value={playerFps}
+            min="1"
+            max="60"
+            onChange={(e) => setPlayerFps(Math.max(1, parseInt(e.target.value) || 1))}
+          />
+          <label className="toggle-label">
+            <input
+              type="checkbox"
+              checked={playerLoop}
+              onChange={(e) => setPlayerLoop(e.target.checked)}
+            />
+            Loop
+          </label>
+        </div>
+      </div>
+    );
+  };
+
   return (
     <div className="app">
       <div className="toolbar">
@@ -535,6 +613,7 @@ function App() {
           )}
           
           {renderCellEditor()}
+          {renderSpritePlayer()}
         </div>
       </div>
     </div>

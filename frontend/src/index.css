@@ -249,6 +249,101 @@ body {
   transform: translateY(-2px);
 }
 
+.sprite-player {
+  margin-top: 6px;
+  padding: 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.player-display {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  min-height: 80px;
+  background-image:
+    linear-gradient(45deg, #ccc 25%, transparent 25%),
+    linear-gradient(-45deg, #ccc 25%, transparent 25%),
+    linear-gradient(45deg, transparent 75%, #ccc 75%),
+    linear-gradient(-45deg, transparent 75%, #ccc 75%);
+  background-size: 16px 16px;
+  background-position: 0 0, 0 8px, 8px -8px, -8px 0px;
+  background-color: #fff;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+}
+
+.player-display img {
+  max-width: 120px;
+  max-height: 120px;
+  object-fit: contain;
+  display: block;
+  image-rendering: pixelated;
+}
+
+.player-info {
+  text-align: center;
+  font-size: 12px;
+  color: #666;
+  margin-top: 6px;
+}
+
+.player-controls {
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.player-controls label {
+  font-size: 12px;
+  font-weight: 500;
+  white-space: nowrap;
+}
+
+.player-controls input[type="number"] {
+  width: 50px;
+  padding: 4px 6px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  font-size: 12px;
+}
+
+.player-btn {
+  padding: 6px 12px;
+  border: 1px solid #ddd;
+  border-radius: 4px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: all 0.2s ease;
+  min-width: 60px;
+}
+
+.player-btn.play {
+  background: #28a745;
+  color: white;
+  border-color: #28a745;
+}
+
+.player-btn.play:hover {
+  background: #218838;
+  border-color: #1e7e34;
+  transform: translateY(-2px);
+}
+
+.player-btn.stop {
+  background: #dc3545;
+  color: white;
+  border-color: #dc3545;
+}
+
+.player-btn.stop:hover {
+  background: #c82333;
+  border-color: #bd2130;
+  transform: translateY(-2px);
+}
+
 .cell-editor {
   margin-top: 6px;
   padding: 6px;
