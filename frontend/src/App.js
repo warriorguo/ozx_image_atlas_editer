@@ -601,6 +601,7 @@ function App() {
               </div>
             </div>
           )}
+          {renderSpritePlayer()}
         </div>
 
         <div className="right-panel">
@@ -628,7 +629,6 @@ function App() {
           )}
           
           {renderCellEditor()}
-          {renderSpritePlayer()}
         </div>
       </div>
     </div>
