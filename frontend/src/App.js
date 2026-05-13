@@ -30,8 +30,16 @@ function App() {
   const [bgFit, setBgFit] = useState('fill');
   const [bgCellIds, setBgCellIds] = useState(new Set());
   const [currentPath, setCurrentPath] = useState(null);
+  const [notice, setNotice] = useState(null);
   const fileInputRef = useRef();
   const bgInputRef = useRef();
+  const noticeTimerRef = useRef(null);
+
+  const showNotice = (message, type = 'success') => {
+    setNotice({ message, type });
+    if (noticeTimerRef.current) clearTimeout(noticeTimerRef.current);
+    noticeTimerRef.current = setTimeout(() => setNotice(null), 2500);
+  };
 
   // Prevent default drag and drop behavior globally
   useEffect(() => {
@@ -229,6 +237,7 @@ function App() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
+      showNotice('Exported atlas');
     } catch (error) {
       console.error('Export failed:', error);
       alert('Failed to export atlas');
@@ -277,6 +286,7 @@ function App() {
     }
     try {
       await client.saveToPath(imageData.imageId, currentPath);
+      showNotice(`Saved to ${currentPath}`);
     } catch (error) {
       console.error('Save failed:', error);
       alert('Failed to save file');
@@ -297,6 +307,7 @@ function App() {
       if (!path || path === FS_NOT_SUPPORTED) return;
       await client.saveToPath(imageData.imageId, path);
       setCurrentPath(path);
+      showNotice(`Saved to ${path}`);
     } catch (error) {
       console.error('Save As failed:', error);
       alert('Failed to save file');
@@ -743,6 +754,11 @@ function App() {
 
   return (
     <div className="app">
+      {notice && (
+        <div className={`toast toast-${notice.type}`} onClick={() => setNotice(null)}>
+          {notice.message}
+        </div>
+      )}
       <div className="toolbar">
         <input
           type="file"
