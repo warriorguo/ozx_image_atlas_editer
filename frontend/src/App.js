@@ -1,5 +1,6 @@
 import React, { useState, useRef, useEffect } from 'react';
-import axios from 'axios';
+import client from './api/client';
+import AsyncImage from './api/AsyncImage';
 import './App.css';
 
 function App() {
@@ -91,15 +92,9 @@ function App() {
     }
     
     setLoading(true);
-    const formData = new FormData();
-    formData.append('file', file);
-
     try {
-      const response = await axios.post('/api/image/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      
-      setImageData(response.data);
+      const data = await client.uploadImage(file);
+      setImageData(data);
       setGridParams(null);
       setCells([]);
       setSelectedCells(new Set());
@@ -145,13 +140,9 @@ function App() {
     
     setLoading(true);
     try {
-      const response = await axios.post(`/api/image/${imageData.imageId}/slice`, {
-        rows,
-        cols
-      });
-      
-      setGridParams(response.data);
-      setCells(response.data.cells);
+      const data = await client.sliceImage(imageData.imageId, { rows, cols });
+      setGridParams(data);
+      setCells(data.cells);
       setSelectedCells(new Set([0]));
       setActiveCell(0);
     } catch (error) {
@@ -163,8 +154,8 @@ function App() {
 
   const refreshBgCells = async (imageId) => {
     try {
-      const r = await axios.get(`/api/image/${imageId}/bg-cells`);
-      setBgCellIds(new Set(r.data.cellIds || []));
+      const r = await client.bgCells(imageId);
+      setBgCellIds(new Set(r.cellIds || []));
     } catch (error) {
       console.error('Failed to fetch bg cells:', error);
     }
@@ -174,15 +165,12 @@ function App() {
     if (!imageData || selectedCells.size === 0) return;
 
     try {
-      await axios.post(`/api/image/${imageData.imageId}/batch/op`, {
-        cellIds: [...selectedCells],
-        operation
-      });
+      await client.batchCellOp(imageData.imageId, [...selectedCells], operation);
       setRefreshKey(prev => prev + 1);
       refreshBgCells(imageData.imageId);
     } catch (error) {
       console.error('Operation failed:', error);
-      alert(error.response?.data?.error || 'Failed to apply operation');
+      alert(error.response?.data?.error || error.message || 'Failed to apply operation');
     }
   };
 
@@ -190,9 +178,7 @@ function App() {
     if (!imageData || selectedCells.size === 0) return;
 
     try {
-      await axios.post(`/api/image/${imageData.imageId}/batch/undo`, {
-        cellIds: [...selectedCells]
-      });
+      await client.batchUndo(imageData.imageId, [...selectedCells]);
       setRefreshKey(prev => prev + 1);
       refreshBgCells(imageData.imageId);
     } catch (error) {
@@ -207,13 +193,8 @@ function App() {
       alert('Please upload an image file');
       return;
     }
-    const formData = new FormData();
-    formData.append('file', file);
     try {
-      const response = await axios.post('/api/background/upload', formData, {
-        headers: { 'Content-Type': 'multipart/form-data' }
-      });
-      const bg = response.data;
+      const bg = await client.uploadBackground(file);
       setBackgrounds(prev => [...prev, bg]);
       setSelectedBgId(bg.bgId);
     } catch (error) {
@@ -232,13 +213,10 @@ function App() {
 
   const handleExport = async () => {
     if (!imageData) return;
-    
+
     try {
-      const response = await axios.get(`/api/image/${imageData.imageId}/export`, {
-        responseType: 'blob'
-      });
-      
-      const url = window.URL.createObjectURL(new Blob([response.data]));
+      const blob = await client.exportAtlas(imageData.imageId);
+      const url = window.URL.createObjectURL(blob);
       const link = document.createElement('a');
       link.href = url;
       link.setAttribute('download', `atlas_${imageData.imageId}.png`);
@@ -365,8 +343,9 @@ function App() {
             className={`cell-thumbnail ${selectedCells.has(cell.cellId) ? 'selected' : ''}`}
             onClick={(e) => handleCellClick(cell.cellId, e)}
           >
-            <img
-              src={`/api/image/${imageData.imageId}/cell/${cell.cellId}/preview?t=${refreshKey}`}
+            <AsyncImage
+              loader={() => client.cellPreviewSrc(imageData.imageId, cell.cellId, refreshKey)}
+              deps={[imageData.imageId, cell.cellId, refreshKey]}
               alt={`Cell ${cell.cellId}`}
             />
             {showCenterCross && <div className="center-cross" />}
@@ -387,8 +366,9 @@ function App() {
           {selectedCells.size > 1 && <span className="batch-badge">{selectedCells.size} cells selected</span>}
         </div>
         <div className="cell-preview">
-          <img
-            src={`/api/image/${imageData.imageId}/cell/${activeCell}/preview?t=${refreshKey}`}
+          <AsyncImage
+            loader={() => client.cellPreviewSrc(imageData.imageId, activeCell, refreshKey)}
+            deps={[imageData.imageId, activeCell, refreshKey]}
             alt={`Cell ${activeCell}`}
           />
         </div>
@@ -551,8 +531,9 @@ function App() {
         <div className="section-title">Sprite Player</div>
         <div className="player-display">
           <div style={{ position: 'relative', display: 'inline-block', transform: `rotate(${playerRotation}deg)`, transition: 'transform 0.1s ease' }}>
-            <img
-              src={`/api/image/${imageData.imageId}/cell/${currentFrame}/preview?t=${refreshKey}`}
+            <AsyncImage
+              loader={() => client.cellPreviewSrc(imageData.imageId, currentFrame, refreshKey)}
+              deps={[imageData.imageId, currentFrame, refreshKey]}
               alt={`Frame ${safeIndex + 1}`}
             />
             {showCenterCross && <div className="center-cross" />}
