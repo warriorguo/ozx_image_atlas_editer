@@ -24,7 +24,12 @@ function App() {
   const [playerPlaying, setPlayerPlaying] = useState(false);
   const [playerFrameIndex, setPlayerFrameIndex] = useState(0);
   const [playerRotation, setPlayerRotation] = useState(0);
+  const [backgrounds, setBackgrounds] = useState([]);
+  const [selectedBgId, setSelectedBgId] = useState(null);
+  const [bgFit, setBgFit] = useState('fill');
+  const [bgCellIds, setBgCellIds] = useState(new Set());
   const fileInputRef = useRef();
+  const bgInputRef = useRef();
 
   // Prevent default drag and drop behavior globally
   useEffect(() => {
@@ -99,6 +104,7 @@ function App() {
       setCells([]);
       setSelectedCells(new Set());
       setActiveCell(null);
+      setBgCellIds(new Set());
     } catch (error) {
       console.error('Upload failed:', error);
       alert('Failed to upload image');
@@ -155,6 +161,15 @@ function App() {
     setLoading(false);
   };
 
+  const refreshBgCells = async (imageId) => {
+    try {
+      const r = await axios.get(`/api/image/${imageId}/bg-cells`);
+      setBgCellIds(new Set(r.data.cellIds || []));
+    } catch (error) {
+      console.error('Failed to fetch bg cells:', error);
+    }
+  };
+
   const handleCellOperation = async (operation) => {
     if (!imageData || selectedCells.size === 0) return;
 
@@ -164,9 +179,10 @@ function App() {
         operation
       });
       setRefreshKey(prev => prev + 1);
+      refreshBgCells(imageData.imageId);
     } catch (error) {
       console.error('Operation failed:', error);
-      alert('Failed to apply operation');
+      alert(error.response?.data?.error || 'Failed to apply operation');
     }
   };
 
@@ -178,10 +194,40 @@ function App() {
         cellIds: [...selectedCells]
       });
       setRefreshKey(prev => prev + 1);
+      refreshBgCells(imageData.imageId);
     } catch (error) {
       console.error('Undo failed:', error);
       alert('Failed to undo operation');
     }
+  };
+
+  const handleBackgroundUpload = async (file) => {
+    if (!file) return;
+    if (!file.type.startsWith('image/')) {
+      alert('Please upload an image file');
+      return;
+    }
+    const formData = new FormData();
+    formData.append('file', file);
+    try {
+      const response = await axios.post('/api/background/upload', formData, {
+        headers: { 'Content-Type': 'multipart/form-data' }
+      });
+      const bg = response.data;
+      setBackgrounds(prev => [...prev, bg]);
+      setSelectedBgId(bg.bgId);
+    } catch (error) {
+      console.error('Background upload failed:', error);
+      alert('Failed to upload background');
+    }
+  };
+
+  const handleApplyBackground = () => {
+    if (!selectedBgId) {
+      alert('Pick or upload a background image first');
+      return;
+    }
+    handleCellOperation({ type: 'set_background', bg_id: selectedBgId, fit: bgFit });
   };
 
   const handleExport = async () => {
@@ -324,6 +370,7 @@ function App() {
               alt={`Cell ${cell.cellId}`}
             />
             {showCenterCross && <div className="center-cross" />}
+            {bgCellIds.has(cell.cellId) && <div className="bg-badge" title="Has background">BG</div>}
           </div>
         ))}
       </div>
@@ -387,6 +434,50 @@ function App() {
           >
             Remove Color
           </button>
+        </div>
+        <div className="bg-control">
+          <div className="bg-control-row">
+            <label>Background:</label>
+            <input
+              type="file"
+              ref={bgInputRef}
+              accept="image/*"
+              style={{ display: 'none' }}
+              onChange={(e) => {
+                handleBackgroundUpload(e.target.files[0]);
+                e.target.value = '';
+              }}
+            />
+            <button className="bg-upload-btn" onClick={() => bgInputRef.current?.click()}>
+              Upload BG
+            </button>
+            <select value={bgFit} onChange={(e) => setBgFit(e.target.value)} className="bg-fit-select">
+              <option value="fill">Fill (cover)</option>
+              <option value="fit">Fit (contain)</option>
+              <option value="stretch">Stretch</option>
+            </select>
+            <button
+              className="bg-apply-btn"
+              onClick={handleApplyBackground}
+              disabled={!selectedBgId || selectedCells.size === 0}
+            >
+              Apply BG
+            </button>
+          </div>
+          {backgrounds.length > 0 && (
+            <div className="bg-library">
+              {backgrounds.map((bg) => (
+                <div
+                  key={bg.bgId}
+                  className={`bg-thumb ${selectedBgId === bg.bgId ? 'selected' : ''}`}
+                  onClick={() => setSelectedBgId(bg.bgId)}
+                  title={`${bg.width}×${bg.height}`}
+                >
+                  <img src={bg.previewUrl} alt="bg" />
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         <div className="move-control">
           <label>X:</label>

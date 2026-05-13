@@ -21,7 +21,8 @@ class ImageStore:
         self.image_paths: Dict[str, str] = {}
         self.grid_params: Dict[str, dict] = {}
         self.cell_ops: Dict[str, Dict[int, List[dict]]] = {}
-        
+        self.background_paths: Dict[str, str] = {}
+
         # Register cleanup function
         atexit.register(self._cleanup)
     
@@ -83,7 +84,93 @@ class ImageStore:
             return True
         return False
 
+    def store_background(self, image: Image.Image) -> str:
+        bg_id = str(uuid.uuid4())
+        if image.mode != 'RGBA':
+            image = image.convert('RGBA')
+        bg_path = os.path.join(self.temp_dir, f"bg_{bg_id}.png")
+        image.save(bg_path, 'PNG')
+        self.background_paths[bg_id] = bg_path
+        return bg_id
+
+    def get_background(self, bg_id: str) -> Optional[Image.Image]:
+        bg_path = self.background_paths.get(bg_id)
+        if bg_path and os.path.exists(bg_path):
+            return Image.open(bg_path)
+        return None
+
+    def list_backgrounds(self) -> List[str]:
+        return list(self.background_paths.keys())
+
+    def cells_with_background(self, image_id: str) -> List[int]:
+        if image_id not in self.cell_ops:
+            return []
+        return sorted(
+            cell_id
+            for cell_id, ops in self.cell_ops[image_id].items()
+            if any(op.get('type') == 'set_background' for op in ops)
+        )
+
 store = ImageStore()
+
+
+def _prepare_background(bg: Image.Image, cell_width: int, cell_height: int, fit: str) -> Image.Image:
+    """Return a (cell_width, cell_height) RGBA canvas with bg placed per fit mode."""
+    if bg.mode != 'RGBA':
+        bg = bg.convert('RGBA')
+    bw, bh = bg.size
+    canvas = Image.new('RGBA', (cell_width, cell_height), (0, 0, 0, 0))
+    if fit == 'stretch':
+        canvas.paste(bg.resize((cell_width, cell_height), Image.LANCZOS), (0, 0))
+    elif fit == 'fit':
+        scale = min(cell_width / bw, cell_height / bh)
+        new_w = max(1, int(round(bw * scale)))
+        new_h = max(1, int(round(bh * scale)))
+        scaled = bg.resize((new_w, new_h), Image.LANCZOS)
+        canvas.paste(scaled, ((cell_width - new_w) // 2, (cell_height - new_h) // 2))
+    else:  # 'fill' / cover
+        scale = max(cell_width / bw, cell_height / bh)
+        new_w = max(1, int(round(bw * scale)))
+        new_h = max(1, int(round(bh * scale)))
+        scaled = bg.resize((new_w, new_h), Image.LANCZOS)
+        left = max(0, (new_w - cell_width) // 2)
+        top = max(0, (new_h - cell_height) // 2)
+        canvas.paste(scaled.crop((left, top, left + cell_width, top + cell_height)), (0, 0))
+    return canvas
+
+
+def _apply_op(cell_image: Image.Image, cell_width: int, cell_height: int, op: dict) -> Image.Image:
+    op_type = op['type']
+    if op_type == 'erase':
+        return Image.new('RGBA', (cell_width, cell_height), (0, 0, 0, 0))
+    if op_type == 'rotate':
+        return cell_image.rotate(-op['degree'], expand=False, fillcolor=(0, 0, 0, 0))
+    if op_type == 'opacity':
+        r, g, b, a = cell_image.split()
+        a = a.point(lambda x: int(x * op['value']))
+        return Image.merge('RGBA', (r, g, b, a))
+    if op_type == 'remove_color':
+        target = tuple(int(op['color'][i:i+2], 16) for i in (1, 3, 5))
+        tolerance = op['tolerance']
+        arr = np.array(cell_image, dtype=np.float64)
+        diff = arr[:, :, :3] - np.array(target, dtype=np.float64)
+        dist = np.sqrt(np.sum(diff ** 2, axis=2))
+        mask = dist <= tolerance
+        arr[mask, 3] = 0
+        return Image.fromarray(arr.astype(np.uint8), 'RGBA')
+    if op_type == 'move':
+        dx, dy = op['dx'], op['dy']
+        new_img = Image.new('RGBA', cell_image.size, (0, 0, 0, 0))
+        new_img.paste(cell_image, (dx, dy))
+        return new_img
+    if op_type == 'set_background':
+        bg = store.get_background(op['bg_id'])
+        if bg is None:
+            return cell_image
+        canvas = _prepare_background(bg, cell_width, cell_height, op.get('fit', 'fill'))
+        canvas.alpha_composite(cell_image)
+        return canvas
+    return cell_image
 
 class Renderer:
     @staticmethod
@@ -104,34 +191,10 @@ class Renderer:
         
         # Crop the cell from original image
         cell_image = image.crop((x, y, x + cell_width, y + cell_height))
-        
+
         # Apply operations
-        ops = store.get_cell_ops(image_id, cell_id)
-        for op in ops:
-            if op['type'] == 'erase':
-                # Create transparent image
-                cell_image = Image.new('RGBA', (cell_width, cell_height), (0, 0, 0, 0))
-            elif op['type'] == 'rotate':
-                degree = op['degree']
-                cell_image = cell_image.rotate(-degree, expand=False, fillcolor=(0, 0, 0, 0))
-            elif op['type'] == 'opacity':
-                r, g, b, a = cell_image.split()
-                a = a.point(lambda x: int(x * op['value']))
-                cell_image = Image.merge('RGBA', (r, g, b, a))
-            elif op['type'] == 'remove_color':
-                target = tuple(int(op['color'][i:i+2], 16) for i in (1, 3, 5))
-                tolerance = op['tolerance']
-                arr = np.array(cell_image, dtype=np.float64)
-                diff = arr[:, :, :3] - np.array(target, dtype=np.float64)
-                dist = np.sqrt(np.sum(diff ** 2, axis=2))
-                mask = dist <= tolerance
-                arr[mask, 3] = 0
-                cell_image = Image.fromarray(arr.astype(np.uint8), 'RGBA')
-            elif op['type'] == 'move':
-                dx, dy = op['dx'], op['dy']
-                new_img = Image.new('RGBA', cell_image.size, (0, 0, 0, 0))
-                new_img.paste(cell_image, (dx, dy))
-                cell_image = new_img
+        for op in store.get_cell_ops(image_id, cell_id):
+            cell_image = _apply_op(cell_image, cell_width, cell_height, op)
 
         # Convert to bytes
         buffer = io.BytesIO()
@@ -162,33 +225,10 @@ class Renderer:
                 
                 # Get original cell
                 cell_image = image.crop((x, y, x + cell_width, y + cell_height))
-                
+
                 # Apply operations
-                ops = store.get_cell_ops(image_id, cell_id)
-                for op in ops:
-                    if op['type'] == 'erase':
-                        cell_image = Image.new('RGBA', (cell_width, cell_height), (0, 0, 0, 0))
-                    elif op['type'] == 'rotate':
-                        degree = op['degree']
-                        cell_image = cell_image.rotate(-degree, expand=False, fillcolor=(0, 0, 0, 0))
-                    elif op['type'] == 'opacity':
-                        r, g, b, a = cell_image.split()
-                        a = a.point(lambda x: int(x * op['value']))
-                        cell_image = Image.merge('RGBA', (r, g, b, a))
-                    elif op['type'] == 'remove_color':
-                        target = tuple(int(op['color'][i:i+2], 16) for i in (1, 3, 5))
-                        tolerance = op['tolerance']
-                        arr = np.array(cell_image, dtype=np.float64)
-                        diff = arr[:, :, :3] - np.array(target, dtype=np.float64)
-                        dist = np.sqrt(np.sum(diff ** 2, axis=2))
-                        mask = dist <= tolerance
-                        arr[mask, 3] = 0
-                        cell_image = Image.fromarray(arr.astype(np.uint8), 'RGBA')
-                    elif op['type'] == 'move':
-                        dx, dy = op['dx'], op['dy']
-                        new_img = Image.new('RGBA', cell_image.size, (0, 0, 0, 0))
-                        new_img.paste(cell_image, (dx, dy))
-                        cell_image = new_img
+                for op in store.get_cell_ops(image_id, cell_id):
+                    cell_image = _apply_op(cell_image, cell_width, cell_height, op)
 
                 # Paste into output
                 output_image.paste(cell_image, (x, y))
@@ -227,6 +267,16 @@ def _validate_operation(data):
         if not isinstance(dx, int) or not isinstance(dy, int):
             return None, 'dx and dy must be integers'
         return {'type': 'move', 'dx': dx, 'dy': dy}, None
+    elif op_type == 'set_background':
+        bg_id = data.get('bg_id')
+        fit = data.get('fit', 'fill')
+        if not isinstance(bg_id, str) or not bg_id:
+            return None, 'bg_id must be a non-empty string'
+        if fit not in ('fit', 'fill', 'stretch'):
+            return None, 'fit must be one of fit, fill, stretch'
+        if store.get_background(bg_id) is None:
+            return None, 'Background image not found'
+        return {'type': 'set_background', 'bg_id': bg_id, 'fit': fit}, None
     else:
         return None, 'Invalid operation type'
 
@@ -365,6 +415,48 @@ def delete_image(image_id):
         return jsonify({'ok': True})
     else:
         return jsonify({'error': 'Image not found'}), 404
+
+@app.route('/api/background/upload', methods=['POST'])
+def upload_background():
+    if 'file' not in request.files:
+        return jsonify({'error': 'No file provided'}), 400
+    file = request.files['file']
+    if file.filename == '':
+        return jsonify({'error': 'No file selected'}), 400
+    try:
+        image = Image.open(file.stream)
+        bg_id = store.store_background(image)
+        return jsonify({
+            'bgId': bg_id,
+            'width': image.width,
+            'height': image.height,
+            'previewUrl': f'/api/background/{bg_id}/preview'
+        })
+    except Exception as e:
+        return jsonify({'error': str(e)}), 500
+
+
+@app.route('/api/background/<bg_id>/preview')
+def get_background_preview(bg_id):
+    bg_path = store.background_paths.get(bg_id)
+    if not bg_path or not os.path.exists(bg_path):
+        return 'Background not found', 404
+    return send_file(bg_path, mimetype='image/png')
+
+
+@app.route('/api/backgrounds')
+def list_backgrounds():
+    bgs = [
+        {'bgId': bg_id, 'previewUrl': f'/api/background/{bg_id}/preview'}
+        for bg_id in store.list_backgrounds()
+    ]
+    return jsonify({'backgrounds': bgs})
+
+
+@app.route('/api/image/<image_id>/bg-cells')
+def get_bg_cells(image_id):
+    return jsonify({'cellIds': store.cells_with_background(image_id)})
+
 
 @app.route('/api/image/<image_id>/export')
 def export_atlas(image_id):
