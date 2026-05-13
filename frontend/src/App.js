@@ -378,6 +378,9 @@ function App() {
       } else if (k === 's') {
         e.preventDefault();
         fileShortcutsRef.current.handleSave();
+      } else if (k === 'r') {
+        e.preventDefault();
+        window.location.reload();
       }
     };
     window.addEventListener('keydown', onKey);
@@ -750,6 +753,9 @@ function App() {
         />
         <button onClick={handleOpen} title={isLocal ? 'Open file (⌘O)' : 'Upload image'}>
           {isLocal ? 'Open File…' : 'Upload Image'}
+        </button>
+        <button onClick={() => window.location.reload()} title="Reload (⌘R)">
+          Reload
         </button>
 
         {imageData && (
