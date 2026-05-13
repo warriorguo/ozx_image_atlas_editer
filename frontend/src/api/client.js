@@ -30,6 +30,13 @@ async function fileToBytes(file) {
   return Array.from(new Uint8Array(buf));
 }
 
+/**
+ * File-system operations are local-mode-only. The web client provides
+ * stubs that signal "fall back to your existing button flow" via null
+ * return values, so App.js can branch without checking isLocal directly.
+ */
+const FS_NOT_SUPPORTED = Symbol('fs-not-supported');
+
 const webClient = {
   async uploadImage(file) {
     const fd = new FormData();
@@ -85,6 +92,11 @@ const webClient = {
   bgPreviewSrc(bgId) {
     return { src: `/api/background/${bgId}/preview`, revoke: null };
   },
+
+  // File-system stubs — null means "not supported, use the in-app button".
+  async openFromPath() { return FS_NOT_SUPPORTED; },
+  async saveToPath() { return FS_NOT_SUPPORTED; },
+  async pickSavePath() { return FS_NOT_SUPPORTED; },
 };
 
 const localClient = {
@@ -156,7 +168,47 @@ const localClient = {
       resolve(bytesToBlobUrl(bytes));
     });
   },
+
+  async openFromPath() {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const { readFile } = await import('@tauri-apps/plugin-fs');
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+    });
+    if (!selected) return null;
+    const path = typeof selected === 'string' ? selected : selected[0];
+    const u8 = await readFile(path);
+    const r = await invoke('image_load_bytes', { bytes: Array.from(u8) });
+    const blob = new Blob([u8]);
+    return {
+      imageId: r.imageId,
+      width: r.width,
+      height: r.height,
+      previewUrl: URL.createObjectURL(blob),
+      path,
+    };
+  },
+
+  async pickSavePath(defaultName) {
+    const { save } = await import('@tauri-apps/plugin-dialog');
+    return save({
+      defaultPath: defaultName,
+      filters: [{ name: 'PNG', extensions: ['png'] }],
+    });
+  },
+
+  async saveToPath(imageId, path) {
+    const { writeFile } = await import('@tauri-apps/plugin-fs');
+    const bytes = await invoke('atlas_export', { imageId });
+    const u8 = asUint8Array(bytes);
+    await writeFile(path, u8);
+    return true;
+  },
 };
+
+export { FS_NOT_SUPPORTED };
 
 const client = isLocal ? localClient : webClient;
 export default client;

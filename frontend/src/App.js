@@ -1,5 +1,5 @@
 import React, { useState, useRef, useEffect } from 'react';
-import client from './api/client';
+import client, { isLocal, FS_NOT_SUPPORTED } from './api/client';
 import AsyncImage from './api/AsyncImage';
 import './App.css';
 
@@ -29,6 +29,7 @@ function App() {
   const [selectedBgId, setSelectedBgId] = useState(null);
   const [bgFit, setBgFit] = useState('fill');
   const [bgCellIds, setBgCellIds] = useState(new Set());
+  const [currentPath, setCurrentPath] = useState(null);
   const fileInputRef = useRef();
   const bgInputRef = useRef();
 
@@ -57,6 +58,8 @@ function App() {
       document.removeEventListener('drop', handleGlobalDrop, false);
     };
   }, []);
+
+  const fileShortcutsRef = useRef({});
 
   // Sprite player animation loop
   useEffect(() => {
@@ -100,6 +103,8 @@ function App() {
       setSelectedCells(new Set());
       setActiveCell(null);
       setBgCellIds(new Set());
+      // File loaded via HTML input — no on-disk path to save back to.
+      setCurrentPath(null);
     } catch (error) {
       console.error('Upload failed:', error);
       alert('Failed to upload image');
@@ -229,6 +234,100 @@ function App() {
       alert('Failed to export atlas');
     }
   };
+
+  // Native File → Open via Tauri dialog. In web mode this falls back to the
+  // existing Upload Image button (HTML file input).
+  const handleOpen = async () => {
+    if (!isLocal) {
+      fileInputRef.current?.click();
+      return;
+    }
+    try {
+      const result = await client.openFromPath();
+      if (result === FS_NOT_SUPPORTED || !result) return;
+      setImageData({
+        imageId: result.imageId,
+        width: result.width,
+        height: result.height,
+        previewUrl: result.previewUrl,
+      });
+      setCurrentPath(result.path);
+      setGridParams(null);
+      setCells([]);
+      setSelectedCells(new Set());
+      setActiveCell(null);
+      setBgCellIds(new Set());
+    } catch (error) {
+      console.error('Open failed:', error);
+      alert('Failed to open file');
+    }
+  };
+
+  // Native File → Save. Writes to currentPath if known, otherwise prompts.
+  // In web mode this is the same as Export Atlas (browser download).
+  const handleSave = async () => {
+    if (!imageData) return;
+    if (!isLocal) {
+      await handleExport();
+      return;
+    }
+    if (!currentPath) {
+      await handleSaveAs();
+      return;
+    }
+    try {
+      await client.saveToPath(imageData.imageId, currentPath);
+    } catch (error) {
+      console.error('Save failed:', error);
+      alert('Failed to save file');
+    }
+  };
+
+  const handleSaveAs = async () => {
+    if (!imageData) return;
+    if (!isLocal) {
+      await handleExport();
+      return;
+    }
+    try {
+      const defaultName = currentPath
+        ? currentPath.split('/').pop()
+        : `atlas_${imageData.imageId}.png`;
+      const path = await client.pickSavePath(defaultName);
+      if (!path || path === FS_NOT_SUPPORTED) return;
+      await client.saveToPath(imageData.imageId, path);
+      setCurrentPath(path);
+    } catch (error) {
+      console.error('Save As failed:', error);
+      alert('Failed to save file');
+    }
+  };
+
+  // Bind file shortcuts in JS — recipe lesson: do NOT register Cmd+O/S/⇧S as
+  // native menu key_equivalents, or the menu intercepts before the webview
+  // hears the keystroke. Use a ref so the listener stays mounted once but
+  // always sees the latest handler closures.
+  fileShortcutsRef.current = { handleOpen, handleSave, handleSaveAs };
+
+  useEffect(() => {
+    const onKey = (e) => {
+      const mod = e.metaKey || e.ctrlKey;
+      if (!mod) return;
+      const k = e.key.toLowerCase();
+      if (k === 'o') {
+        e.preventDefault();
+        fileShortcutsRef.current.handleOpen();
+      } else if (k === 's' && e.shiftKey) {
+        e.preventDefault();
+        fileShortcutsRef.current.handleSaveAs();
+      } else if (k === 's') {
+        e.preventDefault();
+        fileShortcutsRef.current.handleSave();
+      }
+    };
+    window.addEventListener('keydown', onKey);
+    return () => window.removeEventListener('keydown', onKey);
+  }, []);
 
   const handleCellClick = (cellId, e) => {
     if (e.ctrlKey || e.metaKey) {
@@ -594,10 +693,10 @@ function App() {
           accept="image/*"
           style={{ display: 'none' }}
         />
-        <button onClick={() => fileInputRef.current?.click()}>
-          Upload Image
+        <button onClick={handleOpen} title={isLocal ? 'Open file (⌘O)' : 'Upload image'}>
+          {isLocal ? 'Open File…' : 'Upload Image'}
         </button>
-        
+
         {imageData && (
           <>
             <div className="input-group">
@@ -627,9 +726,16 @@ function App() {
         )}
         
         {gridParams && (
-          <button onClick={handleExport}>
-            Export Atlas
-          </button>
+          <>
+            {isLocal ? (
+              <>
+                <button onClick={handleSave} title="Save (⌘S)">Save</button>
+                <button onClick={handleSaveAs} title="Save As… (⇧⌘S)">Save As…</button>
+              </>
+            ) : (
+              <button onClick={handleExport}>Export Atlas</button>
+            )}
+          </>
         )}
       </div>
 
@@ -671,6 +777,11 @@ function App() {
               <div style={{ marginTop: '10px', fontSize: '14px', color: '#666' }}>
                 Size: {imageData.width} × {imageData.height}
               </div>
+              {currentPath && (
+                <div style={{ marginTop: '4px', fontSize: '12px', color: '#888', wordBreak: 'break-all' }}>
+                  Editing: {currentPath}
+                </div>
+              )}
             </div>
           )}
           {renderSpritePlayer()}
