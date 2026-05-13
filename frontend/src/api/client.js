@@ -97,6 +97,9 @@ const webClient = {
   async openFromPath() { return FS_NOT_SUPPORTED; },
   async saveToPath() { return FS_NOT_SUPPORTED; },
   async pickSavePath() { return FS_NOT_SUPPORTED; },
+  async loadFromPath() { return FS_NOT_SUPPORTED; },
+  // HTML5 drag-drop already works in the browser; nothing to subscribe to.
+  async onDragDrop() { return () => {}; },
 };
 
 const localClient = {
@@ -169,16 +172,8 @@ const localClient = {
     });
   },
 
-  async openFromPath() {
-    const { open } = await import('@tauri-apps/plugin-dialog');
+  async loadFromPath(path) {
     const { readFile } = await import('@tauri-apps/plugin-fs');
-    const selected = await open({
-      multiple: false,
-      directory: false,
-      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
-    });
-    if (!selected) return null;
-    const path = typeof selected === 'string' ? selected : selected[0];
     const u8 = await readFile(path);
     const r = await invoke('image_load_bytes', { bytes: Array.from(u8) });
     const blob = new Blob([u8]);
@@ -189,6 +184,32 @@ const localClient = {
       previewUrl: URL.createObjectURL(blob),
       path,
     };
+  },
+
+  async openFromPath() {
+    const { open } = await import('@tauri-apps/plugin-dialog');
+    const selected = await open({
+      multiple: false,
+      directory: false,
+      filters: [{ name: 'Images', extensions: ['png', 'jpg', 'jpeg', 'webp', 'bmp'] }],
+    });
+    if (!selected) return null;
+    const path = typeof selected === 'string' ? selected : selected[0];
+    return this.loadFromPath(path);
+  },
+
+  /**
+   * Tauri intercepts native OS drag-drop before HTML5 events can fire, so
+   * the existing onDrop handler in the upload-area never runs in the
+   * bundled app. Subscribe to the webview's drag-drop event instead.
+   * Callback receives {type: 'over'|'leave'|'drop', paths?: string[]}.
+   * Returns an unsubscribe Promise.
+   */
+  async onDragDrop(callback) {
+    const { getCurrentWebview } = await import('@tauri-apps/api/webview');
+    return getCurrentWebview().onDragDropEvent((event) => {
+      callback(event.payload);
+    });
   },
 
   async pickSavePath(defaultName) {

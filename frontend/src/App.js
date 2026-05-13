@@ -309,6 +309,61 @@ function App() {
   // always sees the latest handler closures.
   fileShortcutsRef.current = { handleOpen, handleSave, handleSaveAs };
 
+  // Tauri intercepts native drag-drop, so the .upload-area's HTML5 onDrop
+  // never fires in the bundled app. Subscribe to the webview's drag-drop
+  // event in local mode; web mode keeps using HTML5 (this no-ops).
+  const loadFromDrop = async (path) => {
+    setLoading(true);
+    try {
+      const result = await client.loadFromPath(path);
+      if (result === FS_NOT_SUPPORTED || !result) return;
+      setImageData({
+        imageId: result.imageId,
+        width: result.width,
+        height: result.height,
+        previewUrl: result.previewUrl,
+      });
+      setCurrentPath(result.path);
+      setGridParams(null);
+      setCells([]);
+      setSelectedCells(new Set());
+      setActiveCell(null);
+      setBgCellIds(new Set());
+    } catch (error) {
+      console.error('Drop load failed:', error);
+      alert('Failed to load dropped file');
+    }
+    setLoading(false);
+  };
+
+  const dropHandlerRef = useRef(null);
+  dropHandlerRef.current = loadFromDrop;
+
+  useEffect(() => {
+    let unlisten = null;
+    let cancelled = false;
+    client
+      .onDragDrop((payload) => {
+        if (payload.type === 'over') {
+          setDragOver(true);
+        } else if (payload.type === 'leave') {
+          setDragOver(false);
+        } else if (payload.type === 'drop') {
+          setDragOver(false);
+          const path = payload.paths?.[0];
+          if (path) dropHandlerRef.current(path);
+        }
+      })
+      .then((fn) => {
+        if (cancelled) fn?.();
+        else unlisten = fn;
+      });
+    return () => {
+      cancelled = true;
+      if (typeof unlisten === 'function') unlisten();
+    };
+  }, []);
+
   useEffect(() => {
     const onKey = (e) => {
       const mod = e.metaKey || e.ctrlKey;
