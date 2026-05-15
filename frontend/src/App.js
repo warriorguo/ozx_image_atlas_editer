@@ -407,12 +407,17 @@ function App() {
         } else {
           next.add(cellId);
         }
+        // Jump the sprite player to the just-clicked cell within the new selection.
+        const sortedFrames = [...next].sort((a, b) => a - b);
+        const idx = sortedFrames.indexOf(cellId);
+        if (idx >= 0) setPlayerFrameIndex(idx);
         return next;
       });
       setActiveCell(cellId);
     } else {
       setSelectedCells(new Set([cellId]));
       setActiveCell(cellId);
+      setPlayerFrameIndex(0);
     }
   };
 
@@ -708,7 +713,7 @@ function App() {
           </div>
         </div>
         <div className="player-info">
-          Frame {safeIndex + 1} / {frames.length}
+          Frame {safeIndex + 1} / {frames.length} · Cell #{currentFrame}
         </div>
         <div className="player-controls">
           <button
