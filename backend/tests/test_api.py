@@ -117,6 +117,41 @@ class TestAPI:
                              json={'type': 'invalid'})
         assert response.status_code == 400
 
+    def test_apply_scale_operation(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'scale', 'factor': 1.5})
+        assert response.status_code == 200
+        assert response.json['ok'] is True
+
+    def test_apply_invalid_scale_out_of_range(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'scale', 'factor': 50})
+        assert response.status_code == 400
+
+    def test_apply_invalid_scale_non_numeric(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'scale', 'factor': 'big'})
+        assert response.status_code == 400
+
+    def test_batch_scale_operation(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/batch/op',
+                             json={'cellIds': [0, 1, 2, 3],
+                                   'operation': {'type': 'scale', 'factor': 0.75}})
+        assert response.status_code == 200
+        assert response.json['ok'] is True
+
     def test_undo_operation(self, client, uploaded_image_id):
         # Slice and add operation
         client.post(f'/api/image/{uploaded_image_id}/slice', 

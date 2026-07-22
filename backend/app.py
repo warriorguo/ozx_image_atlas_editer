@@ -163,6 +163,17 @@ def _apply_op(cell_image: Image.Image, cell_width: int, cell_height: int, op: di
         new_img = Image.new('RGBA', cell_image.size, (0, 0, 0, 0))
         new_img.paste(cell_image, (dx, dy))
         return new_img
+    if op_type == 'scale':
+        factor = op['factor']
+        new_w = max(1, int(round(cell_width * factor)))
+        new_h = max(1, int(round(cell_height * factor)))
+        scaled = cell_image.resize((new_w, new_h), Image.LANCZOS)
+        # Re-center the scaled content on the fixed-size cell canvas:
+        # crop overflow when enlarging, pad with transparency when shrinking.
+        canvas = Image.new('RGBA', (cell_width, cell_height), (0, 0, 0, 0))
+        offset = ((cell_width - new_w) // 2, (cell_height - new_h) // 2)
+        canvas.paste(scaled, offset)
+        return canvas
     if op_type == 'set_background':
         bg = store.get_background(op['bg_id'])
         if bg is None:
@@ -267,6 +278,13 @@ def _validate_operation(data):
         if not isinstance(dx, int) or not isinstance(dy, int):
             return None, 'dx and dy must be integers'
         return {'type': 'move', 'dx': dx, 'dy': dy}, None
+    elif op_type == 'scale':
+        factor = data.get('factor')
+        if isinstance(factor, bool) or not isinstance(factor, (int, float)):
+            return None, 'Scale factor must be a number'
+        if factor < 0.1 or factor > 10.0:
+            return None, 'Scale factor must be between 0.1 and 10.0'
+        return {'type': 'scale', 'factor': float(factor)}, None
     elif op_type == 'set_background':
         bg_id = data.get('bg_id')
         fit = data.get('fit', 'fill')

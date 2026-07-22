@@ -44,6 +44,9 @@ pub enum Op {
         dx: i32,
         dy: i32,
     },
+    Scale {
+        factor: f32,
+    },
     SetBackground {
         bg_id: String,
         #[serde(default)]

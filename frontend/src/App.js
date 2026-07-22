@@ -12,6 +12,7 @@ function App() {
   const [showCenterCross, setShowCenterCross] = useState(false);
   const [moveX, setMoveX] = useState(0);
   const [moveY, setMoveY] = useState(0);
+  const [scaleFactor, setScaleFactor] = useState(1.0);
   const [rows, setRows] = useState(8);
   const [cols, setCols] = useState(8);
   const [loading, setLoading] = useState(false);
@@ -654,6 +655,26 @@ function App() {
             }}
           >
             Apply Move
+          </button>
+        </div>
+        <div className="scale-control">
+          <label>Scale: {scaleFactor.toFixed(2)}×</label>
+          <input
+            type="range"
+            min="0.1"
+            max="3"
+            step="0.05"
+            value={scaleFactor}
+            onChange={(e) => setScaleFactor(parseFloat(e.target.value))}
+          />
+          <button
+            className="scale-apply-btn"
+            onClick={() => {
+              handleCellOperation({ type: 'scale', factor: scaleFactor });
+              setScaleFactor(1.0);
+            }}
+          >
+            Apply Scale
           </button>
         </div>
         <div className="edit-controls">

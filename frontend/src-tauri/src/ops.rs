@@ -106,6 +106,19 @@ pub fn apply_op(
 
         Op::Move { dx, dy } => move_cell(&cell, *dx, *dy),
 
+        Op::Scale { factor } => {
+            let nw = ((cell_w as f32 * factor).round() as u32).max(1);
+            let nh = ((cell_h as f32 * factor).round() as u32).max(1);
+            let scaled = imageops::resize(&cell, nw, nh, imageops::FilterType::Lanczos3);
+            // Re-center the scaled content on the fixed cell canvas: overlay
+            // crops overflow when enlarging and leaves transparency when shrinking.
+            let mut canvas = transparent(cell_w, cell_h);
+            let ox = ((cell_w as i64) - (nw as i64)) / 2;
+            let oy = ((cell_h as i64) - (nh as i64)) / 2;
+            imageops::overlay(&mut canvas, &scaled, ox, oy);
+            canvas
+        }
+
         Op::SetBackground { bg_id, fit } => match get_bg(bg_id) {
             Some(bg) => {
                 let mut canvas = prepare_background(&bg, cell_w, cell_h, *fit);
@@ -192,6 +205,29 @@ mod tests {
         let out = apply_op(cell, 4, 4, &Op::Move { dx: 1, dy: 1 }, &no_bg);
         assert_eq!(out.get_pixel(0, 0).0, [0, 0, 0, 0]);
         assert_eq!(out.get_pixel(1, 1).0, [1, 2, 3, 255]);
+    }
+
+    #[test]
+    fn scale_down_centers_and_pads() {
+        // 8x8 opaque cell shrunk to 0.5 -> 4x4 content centered, corners transparent.
+        let cell = solid(8, 8, [1, 2, 3, 255]);
+        let out = apply_op(cell, 8, 8, &Op::Scale { factor: 0.5 }, &no_bg);
+        assert_eq!(out.dimensions(), (8, 8));
+        // Corner is outside the centered 4x4 content -> transparent.
+        assert_eq!(out.get_pixel(0, 0).0[3], 0);
+        // Center is covered by the scaled content.
+        assert_eq!(out.get_pixel(4, 4).0[3], 255);
+    }
+
+    #[test]
+    fn scale_up_crops_to_cell() {
+        // Enlarging fully covers the fixed cell -> every pixel opaque.
+        let cell = solid(8, 8, [10, 20, 30, 255]);
+        let out = apply_op(cell, 8, 8, &Op::Scale { factor: 2.0 }, &no_bg);
+        assert_eq!(out.dimensions(), (8, 8));
+        for px in out.pixels() {
+            assert_eq!(px.0[3], 255);
+        }
     }
 
     #[test]

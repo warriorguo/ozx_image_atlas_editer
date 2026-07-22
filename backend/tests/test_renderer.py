@@ -96,6 +96,56 @@ class TestRenderer:
         tl_pixel = atlas_image.getpixel((0, 0))
         assert tl_pixel[3] == 0, "Erased cell should be transparent in atlas"
 
+    def test_render_cell_scale_down(self, sample_image):
+        image_id = store.store_image(sample_image)
+        grid_params = {'rows': 2, 'cols': 2, 'cellWidth': 50, 'cellHeight': 50}
+        store.set_grid_params(image_id, grid_params)
+
+        # Shrink to half size: content centered, edges padded with transparency.
+        store.add_cell_op(image_id, 0, {'type': 'scale', 'factor': 0.5})
+
+        cell_data = Renderer.render_cell(image_id, 0)
+        cell_image = Image.open(io.BytesIO(cell_data))
+
+        # Canvas stays cell-sized.
+        assert cell_image.size == (50, 50)
+        assert cell_image.mode == 'RGBA'
+        # Corners fall outside the centered 25x25 content -> transparent.
+        assert cell_image.getpixel((0, 0)) == (0, 0, 0, 0)
+        assert cell_image.getpixel((49, 49)) == (0, 0, 0, 0)
+        # Center still has opaque content.
+        assert cell_image.getpixel((25, 25))[3] == 255
+
+    def test_render_cell_scale_up(self, sample_image):
+        image_id = store.store_image(sample_image)
+        grid_params = {'rows': 2, 'cols': 2, 'cellWidth': 50, 'cellHeight': 50}
+        store.set_grid_params(image_id, grid_params)
+
+        # Enlarge 2x: overflow cropped back to the fixed cell bounds.
+        store.add_cell_op(image_id, 0, {'type': 'scale', 'factor': 2.0})
+
+        cell_data = Renderer.render_cell(image_id, 0)
+        cell_image = Image.open(io.BytesIO(cell_data))
+
+        assert cell_image.size == (50, 50)
+        # Fully covered by enlarged content -> every pixel opaque.
+        for pixel in cell_image.getdata():
+            assert pixel[3] == 255
+
+    def test_render_cell_scale_preserves_alpha(self, sample_image_rgba):
+        image_id = store.store_image(sample_image_rgba)
+        grid_params = {'rows': 1, 'cols': 1, 'cellWidth': 64, 'cellHeight': 64}
+        store.set_grid_params(image_id, grid_params)
+
+        store.add_cell_op(image_id, 0, {'type': 'scale', 'factor': 0.5})
+        cell_data = Renderer.render_cell(image_id, 0)
+        cell_image = Image.open(io.BytesIO(cell_data))
+
+        assert cell_image.mode == 'RGBA'
+        # The semi-transparent blue region should still carry partial alpha.
+        alphas = {px[3] for px in cell_image.getdata()}
+        assert any(0 < a < 255 for a in alphas)
+
     def test_render_nonexistent_image(self):
         cell_data = Renderer.render_cell('nonexistent', 0)
         assert cell_data is None

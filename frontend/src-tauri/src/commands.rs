@@ -255,6 +255,9 @@ fn validate_op(op: &Op, store: &Store) -> Result<(), String> {
         Op::Opacity { value } if !(0.0..=1.0).contains(value) => {
             Err("opacity value must be between 0.0 and 1.0".to_string())
         }
+        Op::Scale { factor } if !(0.1..=10.0).contains(factor) => {
+            Err("scale factor must be between 0.1 and 10.0".to_string())
+        }
         Op::RemoveColor { color, tolerance } => {
             if color.len() != 7 || !color.starts_with('#') {
                 return Err("color must be a hex string like #rrggbb".to_string());
