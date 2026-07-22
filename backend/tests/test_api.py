@@ -152,6 +152,58 @@ class TestAPI:
         assert response.status_code == 200
         assert response.json['ok'] is True
 
+    def test_apply_despill_operation(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'despill', 'amount': 0.8, 'tint': '#ffffff'})
+        assert response.status_code == 200
+        assert response.json['ok'] is True
+
+    def test_apply_despill_defaults_only(self, client, uploaded_image_id):
+        # All params are optional — bare despill should be accepted.
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'despill'})
+        assert response.status_code == 200
+
+    def test_apply_despill_invalid_amount(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'despill', 'amount': 5})
+        assert response.status_code == 400
+
+    def test_apply_despill_invalid_tint(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'despill', 'tint': 'green'})
+        assert response.status_code == 400
+
+    def test_apply_despill_invalid_softness(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/cell/0/op',
+                             json={'type': 'despill', 'softness': 0})
+        assert response.status_code == 400
+
+    def test_batch_despill_operation(self, client, uploaded_image_id):
+        client.post(f'/api/image/{uploaded_image_id}/slice',
+                   json={'rows': 2, 'cols': 2})
+
+        response = client.post(f'/api/image/{uploaded_image_id}/batch/op',
+                             json={'cellIds': [0, 1, 2, 3],
+                                   'operation': {'type': 'despill', 'amount': 1.0}})
+        assert response.status_code == 200
+        assert response.json['ok'] is True
+
     def test_undo_operation(self, client, uploaded_image_id):
         # Slice and add operation
         client.post(f'/api/image/{uploaded_image_id}/slice', 

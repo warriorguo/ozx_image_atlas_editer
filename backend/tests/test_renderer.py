@@ -146,6 +146,46 @@ class TestRenderer:
         alphas = {px[3] for px in cell_image.getdata()}
         assert any(0 < a < 255 for a in alphas)
 
+    def _despill_cell(self, color, **overrides):
+        """Render a 1-cell image of a solid colour with despill applied."""
+        image = Image.new('RGBA', (4, 4), color)
+        image_id = store.store_image(image)
+        store.set_grid_params(image_id, {'rows': 1, 'cols': 1,
+                                         'cellWidth': 4, 'cellHeight': 4})
+        op = {'type': 'despill', 'amount': 1.0, 'tint': '#ffffff',
+              'threshold': -3.0, 'softness': 30.0}
+        op.update(overrides)
+        store.add_cell_op(image_id, 0, op)
+        return Image.open(io.BytesIO(Renderer.render_cell(image_id, 0))).getpixel((0, 0))
+
+    def test_despill_neutralizes_green(self):
+        # Strongly green pixel: dominance is large, so correction is full and
+        # the green cast should be gone (channels ~equal at neutral tint).
+        r, g, b, a = self._despill_cell((20, 200, 30, 255))
+        assert a == 255
+        assert abs(g - r) <= 2 and abs(g - b) <= 2, \
+            f"green should be neutralized, got {(r, g, b)}"
+
+    def test_despill_preserves_warm_pixel(self):
+        # Brown/warm pixel has negative green dominance -> below threshold ->
+        # untouched. This selectivity is the whole point of the ramp.
+        original = (150, 110, 80, 255)
+        assert self._despill_cell(original) == original
+
+    def test_despill_amount_zero_is_noop(self):
+        original = (20, 200, 30, 255)
+        assert self._despill_cell(original, amount=0.0) == original
+
+    def test_despill_leaves_transparent_pixels_untouched(self):
+        # Fully transparent pixels carry no visible colour.
+        original = (20, 200, 30, 0)
+        assert self._despill_cell(original) == original
+
+    def test_despill_tint_biases_result_warm(self):
+        # A warm tint should push the corrected spill toward red over blue.
+        r, g, b, _ = self._despill_cell((20, 200, 30, 255), tint='#996e57')
+        assert r > g > b, f"expected warm bias r>g>b, got {(r, g, b)}"
+
     def test_render_nonexistent_image(self):
         cell_data = Renderer.render_cell('nonexistent', 0)
         assert cell_data is None

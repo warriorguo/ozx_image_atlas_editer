@@ -13,6 +13,8 @@ function App() {
   const [moveX, setMoveX] = useState(0);
   const [moveY, setMoveY] = useState(0);
   const [scaleFactor, setScaleFactor] = useState(1.0);
+  const [despillAmount, setDespillAmount] = useState(100);
+  const [despillTint, setDespillTint] = useState('#ffffff');
   const [rows, setRows] = useState(8);
   const [cols, setCols] = useState(8);
   const [loading, setLoading] = useState(false);
@@ -587,6 +589,36 @@ function App() {
             onClick={() => handleCellOperation({ type: 'remove_color', color: removeColor, tolerance: colorTolerance })}
           >
             Remove Color
+          </button>
+        </div>
+        <div className="despill-control">
+          <label>Despill: {despillAmount}%</label>
+          <input
+            type="range"
+            min="0"
+            max="100"
+            step="1"
+            value={despillAmount}
+            onChange={(e) => setDespillAmount(parseInt(e.target.value))}
+          />
+          <label>Tint:</label>
+          <input
+            type="color"
+            value={despillTint}
+            onChange={(e) => setDespillTint(e.target.value)}
+            title="Colour the spill converts toward (#ffffff = neutral gray)"
+          />
+          <button
+            className="despill-btn"
+            onClick={() =>
+              handleCellOperation({
+                type: 'despill',
+                amount: despillAmount / 100,
+                tint: despillTint,
+              })
+            }
+          >
+            Remove Green Spill
           </button>
         </div>
         <div className="bg-control">

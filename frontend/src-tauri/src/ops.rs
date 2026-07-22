@@ -106,6 +106,44 @@ pub fn apply_op(
 
         Op::Move { dx, dy } => move_cell(&cell, *dx, *dy),
 
+        Op::Despill {
+            amount,
+            tint,
+            threshold,
+            softness,
+        } => {
+            let Some((tr, tg, tb)) = parse_hex(tint) else {
+                return cell;
+            };
+            if *softness <= 0.0 {
+                return cell;
+            }
+            let coef = [
+                tr as f32 / 255.0,
+                tg as f32 / 255.0,
+                tb as f32 / 255.0,
+            ];
+            let mut out = cell;
+            for px in out.pixels_mut() {
+                // Fully transparent pixels carry no visible colour.
+                if px.0[3] == 0 {
+                    continue;
+                }
+                let (r, g, b) = (px.0[0] as f32, px.0[1] as f32, px.0[2] as f32);
+                let dominance = g - r.max(b);
+                let s = (((dominance - threshold) / softness).clamp(0.0, 1.0)) * amount;
+                if s <= 0.0 {
+                    continue;
+                }
+                let lum = 0.2126 * r + 0.7152 * g + 0.0722 * b;
+                for (i, orig) in [r, g, b].iter().enumerate() {
+                    let target = lum * coef[i];
+                    px.0[i] = (orig * (1.0 - s) + target * s).round().clamp(0.0, 255.0) as u8;
+                }
+            }
+            out
+        }
+
         Op::Scale { factor } => {
             let nw = ((cell_w as f32 * factor).round() as u32).max(1);
             let nh = ((cell_h as f32 * factor).round() as u32).max(1);
@@ -228,6 +266,38 @@ mod tests {
         for px in out.pixels() {
             assert_eq!(px.0[3], 255);
         }
+    }
+
+    fn despill(color: [u8; 4]) -> Rgba<u8> {
+        let op = Op::Despill {
+            amount: 1.0,
+            tint: "#ffffff".to_string(),
+            threshold: -3.0,
+            softness: 30.0,
+        };
+        *apply_op(solid(2, 2, color), 2, 2, &op, &no_bg).get_pixel(0, 0)
+    }
+
+    #[test]
+    fn despill_neutralizes_green() {
+        // Large green dominance -> full correction -> channels end up ~equal.
+        let p = despill([20, 200, 30, 255]).0;
+        assert_eq!(p[3], 255);
+        assert!(
+            p[1].abs_diff(p[0]) <= 2 && p[1].abs_diff(p[2]) <= 2,
+            "green should be neutralized, got {p:?}"
+        );
+    }
+
+    #[test]
+    fn despill_preserves_warm_pixel() {
+        // Negative green dominance -> below threshold -> untouched.
+        assert_eq!(despill([150, 110, 80, 255]).0, [150, 110, 80, 255]);
+    }
+
+    #[test]
+    fn despill_leaves_transparent_pixels_untouched() {
+        assert_eq!(despill([20, 200, 30, 0]).0, [20, 200, 30, 0]);
     }
 
     #[test]

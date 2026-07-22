@@ -26,6 +26,21 @@ impl Default for FitMode {
     }
 }
 
+// Despill defaults — kept in sync with `_validate_operation` in backend/app.py.
+// `#ffffff` means "desaturate toward neutral gray at the same luminance".
+fn default_despill_amount() -> f32 {
+    1.0
+}
+fn default_despill_tint() -> String {
+    "#ffffff".to_string()
+}
+fn default_despill_threshold() -> f32 {
+    -3.0
+}
+fn default_despill_softness() -> f32 {
+    30.0
+}
+
 #[derive(Deserialize, Clone, Debug)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum Op {
@@ -46,6 +61,16 @@ pub enum Op {
     },
     Scale {
         factor: f32,
+    },
+    Despill {
+        #[serde(default = "default_despill_amount")]
+        amount: f32,
+        #[serde(default = "default_despill_tint")]
+        tint: String,
+        #[serde(default = "default_despill_threshold")]
+        threshold: f32,
+        #[serde(default = "default_despill_softness")]
+        softness: f32,
     },
     SetBackground {
         bg_id: String,

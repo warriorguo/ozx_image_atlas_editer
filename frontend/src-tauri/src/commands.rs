@@ -258,6 +258,23 @@ fn validate_op(op: &Op, store: &Store) -> Result<(), String> {
         Op::Scale { factor } if !(0.1..=10.0).contains(factor) => {
             Err("scale factor must be between 0.1 and 10.0".to_string())
         }
+        Op::Despill {
+            amount,
+            tint,
+            softness,
+            ..
+        } => {
+            if !(0.0..=1.0).contains(amount) {
+                return Err("despill amount must be between 0.0 and 1.0".to_string());
+            }
+            if tint.len() != 7 || !tint.starts_with('#') {
+                return Err("tint must be a hex string like #rrggbb".to_string());
+            }
+            if *softness <= 0.0 {
+                return Err("despill softness must be greater than 0".to_string());
+            }
+            Ok(())
+        }
         Op::RemoveColor { color, tolerance } => {
             if color.len() != 7 || !color.starts_with('#') {
                 return Err("color must be a hex string like #rrggbb".to_string());

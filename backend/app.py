@@ -158,6 +158,34 @@ def _apply_op(cell_image: Image.Image, cell_width: int, cell_height: int, op: di
         mask = dist <= tolerance
         arr[mask, 3] = 0
         return Image.fromarray(arr.astype(np.uint8), 'RGBA')
+    if op_type == 'despill':
+        # Neutralize green spill without deleting pixels (unlike remove_color,
+        # which hard-cuts alpha). Green dominance drives a soft correction ramp,
+        # so strongly green pixels are fully corrected while warm/brown pixels
+        # barely change. Vectorized — a per-pixel loop is far too slow here.
+        amount = op['amount']
+        threshold = op['threshold']
+        softness = op['softness']
+        coef = np.array(
+            [int(op['tint'][i:i+2], 16) / 255.0 for i in (1, 3, 5)],
+            dtype=np.float64,
+        )
+
+        arr = np.array(cell_image, dtype=np.float64)
+        rgb = arr[:, :, :3]
+        r, g, b = rgb[:, :, 0], rgb[:, :, 1], rgb[:, :, 2]
+
+        dominance = g - np.maximum(r, b)
+        strength = np.clip((dominance - threshold) / softness, 0.0, 1.0) * amount
+        # Fully transparent pixels carry no visible colour — leave them alone.
+        strength = np.where(arr[:, :, 3] > 0, strength, 0.0)
+
+        luminance = 0.2126 * r + 0.7152 * g + 0.0722 * b
+        target = luminance[:, :, None] * coef[None, None, :]
+        s = strength[:, :, None]
+
+        arr[:, :, :3] = np.clip(np.round(rgb * (1.0 - s) + target * s), 0, 255)
+        return Image.fromarray(arr.astype(np.uint8), 'RGBA')
     if op_type == 'move':
         dx, dy = op['dx'], op['dy']
         new_img = Image.new('RGBA', cell_image.size, (0, 0, 0, 0))
@@ -278,6 +306,34 @@ def _validate_operation(data):
         if not isinstance(dx, int) or not isinstance(dy, int):
             return None, 'dx and dy must be integers'
         return {'type': 'move', 'dx': dx, 'dy': dy}, None
+    elif op_type == 'despill':
+        amount = data.get('amount', 1.0)
+        tint = data.get('tint', '#ffffff')
+        threshold = data.get('threshold', -3.0)
+        softness = data.get('softness', 30.0)
+        if isinstance(amount, bool) or not isinstance(amount, (int, float)):
+            return None, 'Despill amount must be a number'
+        if amount < 0.0 or amount > 1.0:
+            return None, 'Despill amount must be between 0.0 and 1.0'
+        if not isinstance(tint, str) or len(tint) != 7 or tint[0] != '#':
+            return None, 'Tint must be a hex string like #rrggbb'
+        try:
+            int(tint[1:], 16)
+        except ValueError:
+            return None, 'Tint must be a hex string like #rrggbb'
+        if isinstance(threshold, bool) or not isinstance(threshold, (int, float)):
+            return None, 'Despill threshold must be a number'
+        if isinstance(softness, bool) or not isinstance(softness, (int, float)):
+            return None, 'Despill softness must be a number'
+        if softness <= 0:
+            return None, 'Despill softness must be greater than 0'
+        return {
+            'type': 'despill',
+            'amount': float(amount),
+            'tint': tint.lower(),
+            'threshold': float(threshold),
+            'softness': float(softness),
+        }, None
     elif op_type == 'scale':
         factor = data.get('factor')
         if isinstance(factor, bool) or not isinstance(factor, (int, float)):
