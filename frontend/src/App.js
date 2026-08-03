@@ -3,6 +3,28 @@ import client, { isLocal, FS_NOT_SUPPORTED } from './api/client';
 import AsyncImage from './api/AsyncImage';
 import './App.css';
 
+// A press that never travels this far (in screen px) stays a click, so
+// selecting a cell by clicking it keeps working alongside drag-to-move.
+const DRAG_THRESHOLD_PX = 3;
+
+/**
+ * Atlas pixels per screen pixel for a rendered cell <img>.
+ *
+ * The scale comes from the sliced cell size, never from the image's own
+ * natural size: the preview endpoint is free to serve a differently sized
+ * bitmap (and the browser may hand back a cached one from an earlier slice),
+ * so only `gridParams` states the true cell dimensions.
+ *
+ * The editor preview paints with `object-fit: contain`, so the painted
+ * content can be letterboxed inside the element box — taking the larger of
+ * the two axis ratios measures the painted content rather than the box.
+ */
+function atlasPerScreenPx(img, cellW, cellH) {
+  const rect = img.getBoundingClientRect();
+  if (!rect.width || !rect.height || !cellW || !cellH) return 1;
+  return Math.max(cellW / rect.width, cellH / rect.height);
+}
+
 function App() {
   const [imageData, setImageData] = useState(null);
   const [gridParams, setGridParams] = useState(null);
@@ -34,9 +56,14 @@ function App() {
   const [bgCellIds, setBgCellIds] = useState(new Set());
   const [currentPath, setCurrentPath] = useState(null);
   const [notice, setNotice] = useState(null);
+  const [cellDrag, setCellDrag] = useState(null);
   const fileInputRef = useRef();
   const bgInputRef = useRef();
   const noticeTimerRef = useRef(null);
+  // True once the current press has travelled past DRAG_THRESHOLD_PX, so the
+  // click the browser fires on mouseup is swallowed instead of re-selecting.
+  const draggedRef = useRef(false);
+  const dragTeardownRef = useRef(null);
 
   const showNotice = (message, type = 'success') => {
     setNotice({ message, type });
@@ -177,11 +204,15 @@ function App() {
     }
   };
 
-  const handleCellOperation = async (operation) => {
-    if (!imageData || selectedCells.size === 0) return;
+  // `targetCells` overrides the current selection — used by drag-to-move,
+  // which captures its targets on mousedown and must not read a selection
+  // that may still be mid-update.
+  const handleCellOperation = async (operation, targetCells = null) => {
+    const targets = [...(targetCells || selectedCells)];
+    if (!imageData || targets.length === 0) return;
 
     try {
-      await client.batchCellOp(imageData.imageId, [...selectedCells], operation);
+      await client.batchCellOp(imageData.imageId, targets, operation);
       setRefreshKey(prev => prev + 1);
       refreshBgCells(imageData.imageId);
     } catch (error) {
@@ -401,7 +432,120 @@ function App() {
     return () => window.removeEventListener('keydown', onKey);
   }, []);
 
+  /**
+   * Drag the cell content to set the move offset.
+   *
+   * Runs off plain mouse events (not HTML5 drag-and-drop) so it cannot
+   * collide with the image-import drop path, and commits a single
+   * `move` operation on release — one drag is one undo step.
+   */
+  const beginCellDrag = (e, cellId, { selectOnGrab = false } = {}) => {
+    if (e.button !== 0 || !imageData || !gridParams) return;
+    const imgEl = e.currentTarget.querySelector('img');
+    if (!imgEl) return;
+
+    const { cellWidth, cellHeight } = gridParams;
+    const scale = atlasPerScreenPx(imgEl, cellWidth, cellHeight);
+    const startX = e.clientX;
+    const startY = e.clientY;
+
+    // Grabbing a cell outside the selection acts on that cell alone;
+    // grabbing one inside it moves the whole selection together.
+    const alreadySelected = selectedCells.has(cellId);
+    const targets = alreadySelected ? new Set(selectedCells) : new Set([cellId]);
+    // A modifier press is a multi-select gesture, so leave the selection to
+    // the click handler.
+    const claimSelection = selectOnGrab && !alreadySelected && !e.ctrlKey && !e.metaKey;
+
+    // Suppress the browser's own image drag ghost / text selection.
+    e.preventDefault();
+    draggedRef.current = false;
+    let delta = { dx: 0, dy: 0 };
+
+    const onMove = (ev) => {
+      const sdx = ev.clientX - startX;
+      const sdy = ev.clientY - startY;
+      if (!draggedRef.current && Math.hypot(sdx, sdy) < DRAG_THRESHOLD_PX) return;
+      if (!draggedRef.current && claimSelection) {
+        // Only once this is a real drag — doing it on mousedown would
+        // clobber the selection that a plain or modifier click is about
+        // to make.
+        setSelectedCells(new Set([cellId]));
+        setActiveCell(cellId);
+        setPlayerFrameIndex(0);
+      }
+      draggedRef.current = true;
+      delta = { dx: Math.round(sdx * scale), dy: Math.round(sdy * scale) };
+      // Keep the numeric inputs showing the in-flight offset.
+      setMoveX(delta.dx);
+      setMoveY(delta.dy);
+      setCellDrag({ targets, dx: delta.dx, dy: delta.dy });
+    };
+
+    const detach = () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+      window.removeEventListener('keydown', onKey, true);
+      dragTeardownRef.current = null;
+    };
+
+    const cancel = () => {
+      detach();
+      setCellDrag(null);
+      setMoveX(0);
+      setMoveY(0);
+    };
+
+    const onUp = async () => {
+      detach();
+      if (!draggedRef.current || (delta.dx === 0 && delta.dy === 0)) {
+        // A click, or a drag returned to its origin: nothing to commit.
+        setCellDrag(null);
+        setMoveX(0);
+        setMoveY(0);
+        return;
+      }
+      try {
+        // Hold the preview transform until the re-rendered cells arrive,
+        // otherwise the content snaps back for a frame.
+        await handleCellOperation({ type: 'move', dx: delta.dx, dy: delta.dy }, targets);
+      } finally {
+        setCellDrag(null);
+        setMoveX(0);
+        setMoveY(0);
+      }
+    };
+
+    const onKey = (ev) => {
+      // Escape aborts; draggedRef stays set so the trailing click does not
+      // reshuffle the selection.
+      if (ev.key === 'Escape') cancel();
+    };
+
+    dragTeardownRef.current = cancel;
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    window.addEventListener('keydown', onKey, true);
+  };
+
+  // Drop any in-flight drag listeners if the component goes away mid-drag.
+  useEffect(() => () => dragTeardownRef.current?.(), []);
+
+  /**
+   * Live preview offset for a cell taking part in the current drag, as a
+   * percentage of its own box — so the same value is correct for the small
+   * grid thumbnail and the larger editor preview alike.
+   */
+  const dragTransform = (cellId) => {
+    if (!cellDrag || !cellDrag.targets.has(cellId) || !gridParams) return undefined;
+    const x = (cellDrag.dx / gridParams.cellWidth) * 100;
+    const y = (cellDrag.dy / gridParams.cellHeight) * 100;
+    return { transform: `translate(${x}%, ${y}%)` };
+  };
+
   const handleCellClick = (cellId, e) => {
+    // The mouseup that ends a drag also fires a click — ignore it.
+    if (draggedRef.current) return;
     if (e.ctrlKey || e.metaKey) {
       setSelectedCells(prev => {
         const next = new Set(prev);
@@ -516,13 +660,17 @@ function App() {
         {cells.map((cell, index) => (
           <div
             key={cell.cellId}
-            className={`cell-thumbnail ${selectedCells.has(cell.cellId) ? 'selected' : ''}`}
+            className={`cell-thumbnail ${selectedCells.has(cell.cellId) ? 'selected' : ''} ${cellDrag ? 'dragging' : ''}`}
             onClick={(e) => handleCellClick(cell.cellId, e)}
+            onMouseDown={(e) => beginCellDrag(e, cell.cellId, { selectOnGrab: true })}
+            title="Drag to offset · click to select"
           >
             <AsyncImage
               loader={() => client.cellPreviewSrc(imageData.imageId, cell.cellId, refreshKey)}
               deps={[imageData.imageId, cell.cellId, refreshKey]}
               alt={`Cell ${cell.cellId}`}
+              draggable={false}
+              style={dragTransform(cell.cellId)}
             />
             {showCenterCross && <div className="center-cross" />}
             {bgCellIds.has(cell.cellId) && <div className="bg-badge" title="Has background">BG</div>}
@@ -541,11 +689,17 @@ function App() {
           Cell Editor
           {selectedCells.size > 1 && <span className="batch-badge">{selectedCells.size} cells selected</span>}
         </div>
-        <div className="cell-preview">
+        <div
+          className={`cell-preview ${cellDrag ? 'dragging' : ''}`}
+          onMouseDown={(e) => beginCellDrag(e, activeCell)}
+          title="Drag to offset the cell content"
+        >
           <AsyncImage
             loader={() => client.cellPreviewSrc(imageData.imageId, activeCell, refreshKey)}
             deps={[imageData.imageId, activeCell, refreshKey]}
             alt={`Cell ${activeCell}`}
+            draggable={false}
+            style={dragTransform(activeCell)}
           />
         </div>
         <div className="opacity-control">
@@ -688,6 +842,9 @@ function App() {
           >
             Apply Move
           </button>
+        </div>
+        <div className="move-hint">
+          Tip: drag the preview or a cell thumbnail to set the offset · Esc cancels
         </div>
         <div className="scale-control">
           <label>Scale: {scaleFactor.toFixed(2)}×</label>
