@@ -140,6 +140,42 @@ describe('Image Refresh Functionality', () => {
     });
   });
 
+  test('re-slicing refreshes every cell preview (AIE-13)', async () => {
+    const { container } = render(<App />);
+
+    const fileInput = container.querySelector('input[type="file"]');
+    fireEvent.change(fileInput, {
+      target: { files: [new File(['dummy'], 'test.png', { type: 'image/png' })] },
+    });
+
+    await waitFor(() => screen.getByText(/Slice Image/));
+    fireEvent.click(screen.getByText(/Slice Image/));
+    await waitFor(() =>
+      expect(container.querySelectorAll('.cell-thumbnail img')).toHaveLength(2)
+    );
+
+    const srcsAfterFirstSlice = [...container.querySelectorAll('.cell-thumbnail img')].map(
+      (img) => img.src
+    );
+
+    // Slice again — same imageId and cellIds, but the cells behind them
+    // are different now, so the preview URLs must change.
+    fireEvent.click(screen.getByText(/Slice Image/));
+
+    await waitFor(() => {
+      const srcs = [...container.querySelectorAll('.cell-thumbnail img')].map((img) => img.src);
+      expect(srcs).toHaveLength(2);
+      srcs.forEach((src, i) => expect(src).not.toBe(srcsAfterFirstSlice[i]));
+    });
+
+    // The editor preview and sprite player must land on the same key as
+    // the grid, not lag a slice behind.
+    const keyOf = (el) => el.src.match(/[?&]t=(\d+)/)[1];
+    const gridKey = keyOf(container.querySelector('.cell-thumbnail img'));
+    expect(keyOf(container.querySelector('.cell-preview img'))).toBe(gridKey);
+    expect(keyOf(container.querySelector('.player-display img'))).toBe(gridKey);
+  });
+
   test('refresh key increments with each operation', async () => {
     render(<App />);
     

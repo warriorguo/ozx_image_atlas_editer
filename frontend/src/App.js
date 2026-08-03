@@ -188,6 +188,11 @@ function App() {
       setCells(data.cells);
       setSelectedCells(new Set([0]));
       setActiveCell(0);
+      // A re-slice invalidates every cell preview: same imageId, same cellIds,
+      // different bitmaps behind them. Without a new key the URLs are
+      // byte-identical and the browser serves the previous grid's cached
+      // images (and AsyncImage would not even re-run its loader).
+      setRefreshKey(prev => prev + 1);
     } catch (error) {
       console.error('Slice failed:', error);
       alert('Failed to slice image');
