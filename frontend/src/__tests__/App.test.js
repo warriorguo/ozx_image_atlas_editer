@@ -1,20 +1,29 @@
 import React from 'react';
 import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import '@testing-library/jest-dom';
-import axios from 'axios';
 import App from '../App';
 
-// Mock axios
-jest.mock('axios');
-const mockedAxios = axios;
+// Mock axios with a factory. Bare jest.mock('axios') automocks, which has to
+// load the real module first — axios ships ESM at its entry and CRA does not
+// transform node_modules, so that fails the whole suite at parse time.
+jest.mock('axios', () => ({
+  post: jest.fn(),
+  get: jest.fn(),
+}));
+
+const mockedAxios = require('axios');
 
 // Mock URL.createObjectURL
 global.URL.createObjectURL = jest.fn(() => 'mocked-url');
 global.URL.revokeObjectURL = jest.fn();
 
+const fileInputOf = (container) => container.querySelector('input[type="file"]');
+
 describe('App Component', () => {
   beforeEach(() => {
     jest.clearAllMocks();
+    // Cell operations follow up with a bg-cells fetch.
+    mockedAxios.get.mockResolvedValue({ data: { cellIds: [] } });
   });
 
   test('renders upload interface initially', () => {
@@ -35,9 +44,9 @@ describe('App Component', () => {
     };
     mockedAxios.post.mockResolvedValueOnce(mockResponse);
 
-    render(<App />);
-    
-    const fileInput = screen.getByDisplayValue('');
+    const { container } = render(<App />);
+
+    const fileInput = fileInputOf(container);
     const file = new File(['dummy'], 'test.png', { type: 'image/png' });
     
     fireEvent.change(fileInput, { target: { files: [file] } });
@@ -83,10 +92,10 @@ describe('App Component', () => {
       .mockResolvedValueOnce(uploadResponse)
       .mockResolvedValueOnce(sliceResponse);
 
-    render(<App />);
-    
+    const { container } = render(<App />);
+
     // Upload file
-    const fileInput = screen.getByDisplayValue('');
+    const fileInput = fileInputOf(container);
     const file = new File(['dummy'], 'test.png', { type: 'image/png' });
     fireEvent.change(fileInput, { target: { files: [file] } });
     
@@ -128,11 +137,11 @@ describe('App Component', () => {
       .mockResolvedValueOnce(sliceResponse)
       .mockResolvedValueOnce(operationResponse);
 
-    render(<App />);
-    
+    const { container } = render(<App />);
+
     // Upload and slice
-    const fileInput = screen.getByDisplayValue('');
-    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png')] } });
+    const fileInput = fileInputOf(container);
+    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png', { type: 'image/png' })] } });
     
     await waitFor(() => screen.getByText(/Slice Image/));
     fireEvent.click(screen.getByText(/Slice Image/));
@@ -148,8 +157,8 @@ describe('App Component', () => {
     
     await waitFor(() => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/api/image/test-id/cell/0/op',
-        { type: 'erase' }
+        '/api/image/test-id/batch/op',
+        { cellIds: [0], operation: { type: 'erase' } }
       );
     });
   });
@@ -172,10 +181,10 @@ describe('App Component', () => {
       .mockResolvedValueOnce(sliceResponse)
       .mockResolvedValueOnce({ data: { ok: true } });
 
-    render(<App />);
-    
-    const fileInput = screen.getByDisplayValue('');
-    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png')] } });
+    const { container } = render(<App />);
+
+    const fileInput = fileInputOf(container);
+    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png', { type: 'image/png' })] } });
     
     await waitFor(() => screen.getByText(/Slice Image/));
     fireEvent.click(screen.getByText(/Slice Image/));
@@ -186,8 +195,8 @@ describe('App Component', () => {
     
     await waitFor(() => {
       expect(mockedAxios.post).toHaveBeenCalledWith(
-        '/api/image/test-id/cell/0/op',
-        { type: 'rotate', degree: 180 }
+        '/api/image/test-id/batch/op',
+        { cellIds: [0], operation: { type: 'rotate', degree: 180 } }
       );
     });
   });
@@ -209,10 +218,10 @@ describe('App Component', () => {
       .mockResolvedValueOnce(sliceResponse)
       .mockResolvedValueOnce({ data: { ok: true } });
 
-    render(<App />);
-    
-    const fileInput = screen.getByDisplayValue('');
-    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png')] } });
+    const { container } = render(<App />);
+
+    const fileInput = fileInputOf(container);
+    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png', { type: 'image/png' })] } });
     
     await waitFor(() => screen.getByText(/Slice Image/));
     fireEvent.click(screen.getByText(/Slice Image/));
@@ -222,7 +231,9 @@ describe('App Component', () => {
     fireEvent.click(screen.getByText(/Undo/));
     
     await waitFor(() => {
-      expect(mockedAxios.post).toHaveBeenCalledWith('/api/image/test-id/cell/0/undo');
+      expect(mockedAxios.post).toHaveBeenCalledWith('/api/image/test-id/batch/undo', {
+        cellIds: [0],
+      });
     });
   });
 
@@ -243,10 +254,10 @@ describe('App Component', () => {
     
     mockedAxios.get.mockResolvedValueOnce(exportResponse);
 
-    render(<App />);
-    
-    const fileInput = screen.getByDisplayValue('');
-    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png')] } });
+    const { container } = render(<App />);
+
+    const fileInput = fileInputOf(container);
+    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png', { type: 'image/png' })] } });
     
     await waitFor(() => screen.getByText(/Slice Image/));
     fireEvent.click(screen.getByText(/Slice Image/));
@@ -263,16 +274,27 @@ describe('App Component', () => {
   });
 
   test('updates grid parameters', async () => {
-    render(<App />);
-    
-    const rowsInput = screen.getByDisplayValue('8');
-    const colsInput = screen.getByDisplayValue('8');
-    
+    mockedAxios.post.mockResolvedValueOnce({
+      data: { imageId: 'test-id', width: 100, height: 100, previewUrl: '/api/image/test-id/preview' },
+    });
+
+    const { container } = render(<App />);
+
+    // The Rows/Cols inputs only exist once an image is loaded.
+    fireEvent.change(fileInputOf(container), {
+      target: { files: [new File(['dummy'], 'test.png', { type: 'image/png' })] },
+    });
+    await waitFor(() => screen.getByText(/Slice Image/));
+
+    const [rowsInput, colsInput] = container.querySelectorAll('.toolbar input[type="number"]');
+    expect(rowsInput).toHaveValue(8);
+    expect(colsInput).toHaveValue(8);
+
     fireEvent.change(rowsInput, { target: { value: '6' } });
     fireEvent.change(colsInput, { target: { value: '4' } });
-    
-    expect(screen.getByDisplayValue('6')).toBeInTheDocument();
-    expect(screen.getByDisplayValue('4')).toBeInTheDocument();
+
+    expect(rowsInput).toHaveValue(6);
+    expect(colsInput).toHaveValue(4);
   });
 
   test('handles API errors gracefully', async () => {
@@ -281,10 +303,10 @@ describe('App Component', () => {
     
     mockedAxios.post.mockRejectedValueOnce(new Error('Network error'));
 
-    render(<App />);
-    
-    const fileInput = screen.getByDisplayValue('');
-    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png')] } });
+    const { container } = render(<App />);
+
+    const fileInput = fileInputOf(container);
+    fireEvent.change(fileInput, { target: { files: [new File(['dummy'], 'test.png', { type: 'image/png' })] } });
     
     await waitFor(() => {
       expect(consoleSpy).toHaveBeenCalledWith('Upload failed:', expect.any(Error));

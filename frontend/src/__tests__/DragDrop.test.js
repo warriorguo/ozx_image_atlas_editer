@@ -29,19 +29,22 @@ describe('Drag and Drop Functionality', () => {
     });
   });
 
+  // The prompt text lives in a child div; the dragover class goes on the
+  // .upload-area that owns the drag handlers.
+  const uploadArea = () =>
+    screen.getByText(/Click or drag to upload an image/).closest('.upload-area');
+
   test('shows dragover state when dragging files', () => {
     render(<App />);
-    
-    const uploadArea = screen.getByText(/Click or drag to upload an image/);
-    
+
     // Simulate drag enter
-    fireEvent.dragEnter(uploadArea, {
+    fireEvent.dragEnter(uploadArea(), {
       dataTransfer: {
         files: [new File(['test'], 'test.png', { type: 'image/png' })]
       }
     });
-    
-    expect(uploadArea).toHaveClass('dragover');
+
+    expect(uploadArea()).toHaveClass('dragover');
     expect(screen.getByText(/Drop image here!/)).toBeInTheDocument();
   });
 
@@ -87,36 +90,33 @@ describe('Drag and Drop Functionality', () => {
 
   test('removes dragover state on drag leave', () => {
     render(<App />);
-    
-    const uploadArea = screen.getByText(/Click or drag to upload an image/);
-    
+
     // Enter drag state
-    fireEvent.dragEnter(uploadArea);
-    expect(uploadArea).toHaveClass('dragover');
-    
+    fireEvent.dragEnter(uploadArea());
+    expect(uploadArea()).toHaveClass('dragover');
+
     // Leave drag state
-    fireEvent.dragLeave(uploadArea);
-    expect(uploadArea).not.toHaveClass('dragover');
+    fireEvent.dragLeave(uploadArea());
+    expect(uploadArea()).not.toHaveClass('dragover');
   });
 
   test('prevents default drag behavior globally', () => {
-    render(<App />);
-    
-    const preventDefaultSpy = jest.fn();
-    const stopPropagationSpy = jest.fn();
-    
-    // Simulate global drag events
-    const dragEvent = {
-      preventDefault: preventDefaultSpy,
-      stopPropagation: stopPropagationSpy
+    const { unmount } = render(<App />);
+
+    // Assert the effect, not the registration: a file dropped anywhere on
+    // the document must not make the browser navigate to it.
+    const dispatch = (type) => {
+      const event = new Event(type, { bubbles: true, cancelable: true });
+      document.dispatchEvent(event);
+      return event.defaultPrevented;
     };
-    
-    // These events should be prevented globally
-    document.dispatchEvent(new Event('dragover'));
-    document.dispatchEvent(new Event('drop'));
-    
-    // The component should have added global event listeners
-    expect(document.addEventListener).toHaveBeenCalledWith('dragover', expect.any(Function), false);
-    expect(document.addEventListener).toHaveBeenCalledWith('drop', expect.any(Function), false);
+
+    expect(dispatch('dragover')).toBe(true);
+    expect(dispatch('drop')).toBe(true);
+
+    // And the document-level listeners are cleaned up on unmount.
+    unmount();
+    expect(dispatch('dragover')).toBe(false);
+    expect(dispatch('drop')).toBe(false);
   });
 });
